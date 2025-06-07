@@ -1,9 +1,12 @@
 // lib/screens/cemeteries_list_page.dart
 import 'package:flutter/material.dart';
-import '../widgets/cemetery_card.dart'; // Displays each cemetery
-import '../models/cemetery_model.dart'; // Contains sampleCemeteries and Cemetery model
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase
+import '../widgets/cemetery_card.dart';
+import '../models/cemetery_model.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
+
+final supabase = Supabase.instance.client; // Access global instance
 
 class CemeteriesListPage extends StatefulWidget {
   const CemeteriesListPage({super.key});
@@ -13,17 +16,48 @@ class CemeteriesListPage extends StatefulWidget {
 }
 
 class _CemeteriesListPageState extends State<CemeteriesListPage> {
-  final List<Cemetery> _allCemeteries =
-      sampleCemeteries; // From your cemetery_model.dart
+  List<Cemetery> _allCemeteries = [];
   List<Cemetery> _filteredCemeteries = [];
+  bool _isLoading = true;
+  String? _errorMessage;
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
-    _filteredCemeteries = _allCemeteries;
+    _fetchCemeteriesFromSupabase(); // Fetch data on init
     _searchController.addListener(_onSearchChanged);
+  }
+
+  Future<void> _fetchCemeteriesFromSupabase() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    try {
+      final List<dynamic> response = await supabase
+          .from('cemeteries')
+          .select() // Select all columns, or specify: 'id, name, available_spots, ...'
+          .order('name', ascending: true); // Example ordering
+
+      if (mounted) {
+        setState(() {
+          _allCemeteries =
+              response.map((data) => Cemetery.fromJson(data)).toList();
+          _filteredCemeteries = _allCemeteries;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Failed to load cemeteries: ${e.toString()}";
+          _isLoading = false;
+        });
+      }
+    }
   }
 
   @override
@@ -36,9 +70,7 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
 
   void _onSearchChanged() {
     _filterCemeteries();
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   void _filterCemeteries() {
@@ -68,89 +100,40 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
 
   @override
   Widget build(BuildContext context) {
-    // This is the body content for the "Home" tab in MainScreen.
-    // NO Scaffold or AppBar here.
     return Container(
       color: AppColors.background,
       child: Column(
         children: [
-          // Search Bar
-          Padding(
-            padding: AppStyles.pagePadding.copyWith(top: 16.0, bottom: 12.0),
-            child: Material(
-              elevation: AppStyles.elevationLow / 2,
-              borderRadius: AppStyles.cardBorderRadius,
-              child: TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                style: AppStyles.bodyText1.copyWith(
-                  color: AppColors.primaryText,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Search cemeteries by name or location...',
-                  hintStyle: AppStyles.bodyText2.copyWith(
-                    color: AppColors.secondaryText.withOpacity(0.7),
-                  ),
-                  prefixIcon: const Icon(
-                    Icons.search,
-                    color: AppColors.secondaryText,
-                    size: 22,
-                  ),
-                  suffixIcon:
-                      _searchController.text.isNotEmpty
-                          ? IconButton(
-                            icon: const Icon(
-                              Icons.clear,
-                              color: AppColors.secondaryText,
-                              size: 20,
-                            ),
-                            onPressed: _clearSearch,
-                            splashRadius: 20,
-                            tooltip: 'Clear search',
-                          )
-                          : null,
-                  filled: true,
-                  fillColor: AppColors.cardBackground,
-                  contentPadding: const EdgeInsets.symmetric(
-                    vertical: 14.0,
-                    horizontal: 16.0,
-                  ),
-                  border: OutlineInputBorder(
-                    borderRadius: AppStyles.cardBorderRadius,
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: AppStyles.cardBorderRadius,
-                    borderSide: BorderSide(
-                      color: Colors.grey.shade300,
-                      width: 0.5,
-                    ),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: AppStyles.cardBorderRadius,
-                    borderSide: const BorderSide(
-                      color: AppColors.appBar,
-                      width: 1.5,
-                    ),
-                  ),
-                ),
-                onChanged: (value) {
-                  if (mounted) {
-                    setState(() {});
-                  }
-                },
-              ),
-            ),
-          ),
-          // List of Cemeteries
+          // Search Bar (keep your enhanced search bar UI)
           Expanded(
             child:
-                _filteredCemeteries.isEmpty && _searchController.text.isNotEmpty
+                _isLoading
+                    ? const Center(
+                      child: CircularProgressIndicator(color: AppColors.appBar),
+                    )
+                    : _errorMessage != null
                     ? Center(
                       child: Padding(
-                        padding: const EdgeInsets.all(16.0),
+                        padding: const EdgeInsets.all(16),
                         child: Text(
-                          'No cemeteries found matching "${_searchController.text}".',
+                          _errorMessage!,
+                          style: AppStyles.bodyText1.copyWith(
+                            color: AppColors.errorColor,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    )
+                    : _filteredCemeteries.isEmpty &&
+                        _searchController.text.isNotEmpty
+                    ? Center(/* ... No results for search ... */)
+                    : _allCemeteries
+                        .isEmpty // Check if original list from Supabase is empty
+                    ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Text(
+                          'No cemeteries are currently available.',
                           style: AppStyles.bodyText2.copyWith(
                             color: AppColors.secondaryText,
                           ),
@@ -158,31 +141,23 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
                         ),
                       ),
                     )
-                    : _allCemeteries.isEmpty
-                    ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Text(
-                          'No cemeteries are currently listed.',
-                          style: AppStyles.bodyText2.copyWith(
-                            color: AppColors.secondaryText,
-                          ),
-                          textAlign: TextAlign.center,
+                    : RefreshIndicator(
+                      // Add pull to refresh
+                      onRefresh: _fetchCemeteriesFromSupabase,
+                      color: AppColors.appBar,
+                      child: ListView.builder(
+                        padding: AppStyles.pagePadding.copyWith(
+                          top: 0,
+                          left: 8.0,
+                          right: 8.0,
                         ),
+                        itemCount: _filteredCemeteries.length,
+                        itemBuilder: (context, index) {
+                          return CemeteryCard(
+                            cemetery: _filteredCemeteries[index],
+                          );
+                        },
                       ),
-                    )
-                    : ListView.builder(
-                      padding: AppStyles.pagePadding.copyWith(
-                        top: 0,
-                        left: 8.0,
-                        right: 8.0,
-                      ),
-                      itemCount: _filteredCemeteries.length,
-                      itemBuilder: (context, index) {
-                        return CemeteryCard(
-                          cemetery: _filteredCemeteries[index],
-                        );
-                      },
                     ),
           ),
         ],

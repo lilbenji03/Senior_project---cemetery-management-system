@@ -37,6 +37,7 @@ dependencies:
   intl: ^0.20.2 # Kept as your original
   url_launcher: ^6.3.1 # Kept as your original
   shared_preferences: ^2.5.3 # Kept as your original
+  supabase_flutter: ^2.9.0
   # supabase_flutter: ^2.5.0 # Add this back when you start Supabase integration
 
 dev_dependencies:

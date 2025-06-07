@@ -1,10 +1,14 @@
 // lib/screens/cemetery_spot_list_page.dart
 import 'package:cmc/screens/space_booking_details_page.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase
 import '../models/cemetery_model.dart';
-import '../models/spot_model.dart';
+import '../models/spot_model.dart'; // Your spot model (which no longer has getSampleSpotsForCemetery)
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
+
+// Access global Supabase client instance (ensure it's initialized in main.dart)
+final supabase = Supabase.instance.client;
 
 class CemeterySpotListPage extends StatefulWidget {
   final Cemetery cemetery;
@@ -23,47 +27,65 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
   @override
   void initState() {
     super.initState();
-    _fetchCemeterySpots();
+    _fetchCemeterySpotsFromSupabase(); // Call the Supabase fetching method
   }
 
-  Future<void> _fetchCemeterySpots() async {
+  Future<void> _fetchCemeterySpotsFromSupabase() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
+
     try {
-      await Future.delayed(const Duration(milliseconds: 300));
-      final List<CemeterySpot> fetchedSpots = getSampleSpotsForCemetery(
-        widget.cemetery.id,
-      );
+      // Fetch spots from your 'cemetery_spots' table in Supabase
+      final List<dynamic> response = await supabase
+          .from(
+            'cemetery_spots',
+          ) // MAKE SURE 'cemetery_spots' IS YOUR ACTUAL TABLE NAME
+          .select() // Select all columns, or be specific: 'id, spot_identifier, status, plot_type, cemetery_id'
+          .eq(
+            'cemetery_id',
+            widget.cemetery.id,
+          ) // Filter by the passed cemetery's ID
+          .order(
+            'spot_identifier',
+            ascending: true,
+          ); // Example: order by the spot's display ID
+
+      // The 'response' variable here is a List<Map<String, dynamic>> if successful
+
       if (mounted) {
         setState(() {
-          _spots = fetchedSpots;
+          // Map the Supabase data to your CemeterySpot model
+          _spots = response.map((data) => CemeterySpot.fromJson(data)).toList();
           _isLoading = false;
         });
       }
     } catch (e) {
       if (mounted) {
+        // print("Error fetching spots from Supabase: $e");
         setState(() {
+          _errorMessage =
+              "Failed to load spots. Please try again. (${e.toString()})";
           _isLoading = false;
-          _errorMessage = "Error loading spots: ${e.toString()}";
-          _spots = [];
+          _spots = []; // Clear spots on error
         });
       }
     }
   }
 
+  // ... (Your existing _getColorForStatus, _getTextColorForStatus, _onSpotSelected, _buildLegendItem methods are fine)
   Color _getColorForStatus(SpotStatus status) {
     switch (status) {
       case SpotStatus.available:
         return Colors.green.shade300;
-      case SpotStatus.booked:
-        return Colors.orange.shade600;
-      case SpotStatus.used:
-        return Colors.red.shade700;
       case SpotStatus.pendingApproval:
         return Colors.yellow.shade700;
+      case SpotStatus.booked:
+        return const Color.fromARGB(255, 68, 40, 6);
+      case SpotStatus.used:
+        return Colors.red.shade700;
     }
   }
 
@@ -105,7 +127,7 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
         ),
       ).then((bookingResult) {
         if (bookingResult == true && mounted) {
-          _fetchCemeterySpots();
+          _fetchCemeterySpotsFromSupabase();
         }
       });
     } else {
@@ -216,7 +238,7 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
                         child: Text(
-                          'No spots are currently listed for ${widget.cemetery.name}.',
+                          'No spots are currently listed for ${widget.cemetery.name}.\nThis could be an error or all spots are configured.',
                           textAlign: TextAlign.center,
                           style: AppStyles.bodyText1.copyWith(
                             color: AppColors.secondaryText,
@@ -225,19 +247,17 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                       ),
                     )
                     : RefreshIndicator(
-                      onRefresh: _fetchCemeterySpots,
+                      onRefresh: _fetchCemeterySpotsFromSupabase,
                       color: AppColors.appBar,
                       child: GridView.builder(
-                        key: ValueKey(widget.cemetery.id),
+                        key: ValueKey(
+                          widget.cemetery.id + _spots.length.toString(),
+                        ),
                         padding: const EdgeInsets.all(10.0),
                         gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                           crossAxisCount:
                               MediaQuery.of(context).size.width > 600 ? 10 : 7,
-                          childAspectRatio:
-                              1.0, // <--- ADJUSTMENT 1: Try making items square or slightly taller
-                          // If overflow was due to content being too tall for cell, DECREASE this.
-                          // e.g., 1.0 makes it square, 0.9 makes it taller than wide.
-                          // Original was 1.1. A small overflow of 3.9px might mean 1.0 or 1.05 is enough.
+                          childAspectRatio: 1.0,
                           crossAxisSpacing: 5.0,
                           mainAxisSpacing: 5.0,
                         ),
@@ -257,9 +277,7 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                                 ),
                                 color: _getColorForStatus(spot.status),
                                 child: Container(
-                                  padding: const EdgeInsets.all(
-                                    2.0,
-                                  ), // <--- ADJUSTMENT 2: Slight padding
+                                  padding: const EdgeInsets.all(2.0),
                                   decoration: BoxDecoration(
                                     border: Border.all(
                                       color: Colors.black.withOpacity(0.3),
@@ -268,10 +286,7 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                                     borderRadius: BorderRadius.circular(5.0),
                                   ),
                                   child: FittedBox(
-                                    // <--- ADJUSTMENT 3: Wrap inner content with FittedBox
-                                    fit:
-                                        BoxFit
-                                            .scaleDown, // Scales down if too large, otherwise uses child's size
+                                    fit: BoxFit.scaleDown,
                                     child: Column(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
@@ -281,8 +296,7 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                                         Text(
                                           spot.id,
                                           style: TextStyle(
-                                            fontSize:
-                                                9.0, // <--- ADJUSTMENT 4: Slightly smaller font
+                                            fontSize: 9.0,
                                             fontWeight: FontWeight.bold,
                                             color: textColor,
                                           ),
@@ -290,15 +304,13 @@ class _CemeterySpotListPageState extends State<CemeterySpotListPage> {
                                           overflow: TextOverflow.ellipsis,
                                           maxLines: 1,
                                         ),
-                                        // Removed SizedBox(height:2) for tighter packing if needed
                                         Text(
                                           _getTextForStatus(
                                             spot.status,
                                             short: true,
                                           ),
                                           style: TextStyle(
-                                            fontSize:
-                                                7.0, // <--- ADJUSTMENT 4: Slightly smaller font
+                                            fontSize: 7.0,
                                             color: textColor.withOpacity(0.9),
                                           ),
                                           textAlign: TextAlign.center,

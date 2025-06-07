@@ -34,7 +34,7 @@ class _MainScreenState extends State<MainScreen> {
     const ReservationPage(),
     const ServicesPage(),
     const ReportingPage(),
-    const SettingsPage(),
+    SettingsPage(),
   ];
 
   void _onItemTapped(int index) {
