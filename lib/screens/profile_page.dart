@@ -1,6 +1,8 @@
 // lib/screens/profile_page.dart
 import 'package:flutter/material.dart';
-// Or where your service/model are
+import 'package:supabase_flutter/supabase_flutter.dart'; // For AuthException
+import '../services/auth_service.dart'; // Import your AuthService
+import '../models/user_profile_model.dart'; // Import your UserProfile model
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
 
@@ -12,16 +14,16 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
-  // ... (all the logic from your provided ProfilePage code) ...
-  // Including _loadUserProfile, _saveUserProfile, _buildProfileInfo, _buildProfileForm, etc.
-  final ProfileService _profileService = ProfileService();
-  UserProfile _userProfile = UserProfile(name: '', email: '', phone: '');
-  bool _isLoading = true;
+  final AuthService _authService = AuthService();
+  UserProfile? _userProfile; // Nullable, as it will be fetched
+  bool _isLoading = true; // Start with loading true
+  String? _errorMessage;
   bool _isEditing = false;
 
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
-  late TextEditingController _emailController;
+  late TextEditingController
+  _emailController; // Email usually not editable directly by user here
   late TextEditingController _phoneController;
 
   @override
@@ -34,32 +36,105 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Future<void> _loadUserProfile() async {
-    setState(() => _isLoading = true);
-    _userProfile = await _profileService.loadProfile();
-    _nameController.text = _userProfile.name;
-    _emailController.text = _userProfile.email;
-    _phoneController.text = _userProfile.phone;
-    setState(() => _isLoading = false);
+    if (!mounted) return;
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+    print("ProfilePage: Loading user profile...");
+    try {
+      final profile = await _authService.getUserProfile();
+      if (mounted) {
+        if (profile != null) {
+          setState(() {
+            _userProfile = profile;
+            _nameController.text = profile.fullName ?? '';
+            _emailController.text =
+                profile.email ??
+                Supabase.instance.client.auth.currentUser?.email ??
+                ''; // Get from profile or auth
+            _phoneController.text = profile.phoneNumber ?? '';
+            _isLoading = false;
+          });
+          print("ProfilePage: Profile loaded: ${profile.fullName}");
+        } else {
+          setState(() {
+            _errorMessage =
+                "Could not load profile. User might not have a profile entry or is not logged in.";
+            _isLoading = false;
+          });
+          print("ProfilePage: Profile is null after fetching.");
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Error loading profile: ${e.toString()}";
+          _isLoading = false;
+        });
+        print("ProfilePage: Exception loading profile: $e");
+      }
+    }
   }
 
   Future<void> _saveUserProfile() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
-      final updatedProfile = UserProfile(
-        name: _nameController.text,
-        email: _emailController.text,
-        phone: _phoneController.text,
+    if (!_formKey.currentState!.validate()) return;
+    if (_userProfile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Cannot save, user profile not loaded.'),
+          backgroundColor: AppColors.errorColor,
+        ),
       );
-      await _profileService.saveProfile(updatedProfile);
-      _userProfile = updatedProfile;
-      setState(() {
-        _isLoading = false;
-        _isEditing = false;
-      });
+      return;
+    }
+
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    print("ProfilePage: Saving user profile...");
+
+    // Create a new UserProfile object or update the existing one
+    // It's safer to create a new one or use copyWith if your model has it
+    UserProfile updatedProfileData = UserProfile(
+      id: _userProfile!.id, // Keep existing ID
+      fullName: _nameController.text.trim(),
+      email: _userProfile!.email, // Email typically not changed here by user
+      phoneNumber: _phoneController.text.trim(),
+      profilePhotoUrl:
+          _userProfile!.profilePhotoUrl, // Preserve existing photo URL
+      role: _userProfile!.role, // Role should not be changed by user
+      createdAt: _userProfile!.createdAt, // Preserve original creation date
+      updatedAt:
+          DateTime.now(), // This will be overridden by DB trigger if present
+    );
+
+    try {
+      await _authService.updateUserProfile(updatedProfileData);
       if (mounted) {
+        setState(() {
+          _userProfile =
+              updatedProfileData; // Update local state with what was sent
+          _isEditing = false;
+          _isLoading = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Profile saved successfully!')),
+          const SnackBar(
+            content: Text('Profile saved successfully!'),
+            backgroundColor: AppColors.spotsAvailable,
+          ),
         );
+        print("ProfilePage: Profile saved.");
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save profile: ${e.toString()}'),
+            backgroundColor: AppColors.errorColor,
+          ),
+        );
+        print("ProfilePage: Error saving profile: $e");
       }
     }
   }
@@ -72,20 +147,66 @@ class _ProfilePageState extends State<ProfilePage> {
     super.dispose();
   }
 
-  Widget _buildProfileInfo() {
-    // ... (your existing _buildProfileInfo method)
+  Widget _buildInfoRow(IconData icon, String label, String? value) {
+    // value can be null
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppColors.appBar, size: 22),
+          const SizedBox(width: 16),
+          SizedBox(
+            width: 70, // Fixed width for labels
+            child: Text(
+              '$label:',
+              style: AppStyles.bodyText1.copyWith(
+                fontWeight: FontWeight.w600,
+                fontSize: 15,
+                color: AppColors.secondaryText,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value == null || value.isEmpty ? 'Not set' : value,
+              style: AppStyles.bodyText1.copyWith(
+                fontSize: 15,
+                color:
+                    (value == null || value.isEmpty)
+                        ? Colors.grey.shade600
+                        : AppColors.primaryText,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileView() {
+    if (_userProfile == null) {
+      return Text("No profile data to display.", style: AppStyles.bodyText2);
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _buildInfoRow(Icons.person_outline, 'Name', _userProfile.name),
-        _buildInfoRow(Icons.email_outlined, 'Email', _userProfile.email),
-        _buildInfoRow(Icons.phone_outlined, 'Phone', _userProfile.phone),
+        _buildInfoRow(Icons.person_outline, 'Name', _userProfile!.fullName),
+        _buildInfoRow(
+          Icons.email_outlined,
+          'Email',
+          _userProfile!.email ??
+              Supabase.instance.client.auth.currentUser?.email,
+        ),
+        _buildInfoRow(Icons.phone_outlined, 'Phone', _userProfile!.phoneNumber),
+        // You could add role display for debugging or if relevant
+        // _buildInfoRow(Icons.admin_panel_settings_outlined, 'Role', _userProfile!.role),
       ],
     );
   }
 
   Widget _buildProfileForm() {
-    // ... (your existing _buildProfileForm method)
     return Form(
       key: _formKey,
       child: Column(
@@ -93,12 +214,9 @@ class _ProfilePageState extends State<ProfilePage> {
         children: [
           TextFormField(
             controller: _nameController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Full Name',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.person_outline),
-              labelStyle: AppStyles.caption,
-              hintStyle: AppStyles.caption.copyWith(color: Colors.grey),
+              prefixIcon: Icon(Icons.person_outline),
             ),
             style: AppStyles.bodyText1,
             validator:
@@ -109,76 +227,27 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 16),
           TextFormField(
+            // Email is usually not editable by the user directly here
             controller: _emailController,
-            decoration: InputDecoration(
-              labelText: 'Email Address',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.email_outlined),
-              labelStyle: AppStyles.caption,
-              hintStyle: AppStyles.caption.copyWith(color: Colors.grey),
+            decoration: const InputDecoration(
+              labelText: 'Email Address (cannot be changed here)',
+              prefixIcon: Icon(Icons.email_outlined),
             ),
-            style: AppStyles.bodyText1,
-            keyboardType: TextInputType.emailAddress,
-            validator: (value) {
-              if (value == null || value.isEmpty) {
-                return 'Please enter your email';
-              }
-              if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                return 'Enter a valid email';
-              }
-              return null;
-            },
+            style: AppStyles.bodyText1.copyWith(
+              color: AppColors.secondaryText,
+            ), // Indicate it's not primary input
+            readOnly: true, // Make email read-only
           ),
           const SizedBox(height: 16),
           TextFormField(
             controller: _phoneController,
-            decoration: InputDecoration(
+            decoration: const InputDecoration(
               labelText: 'Phone Number',
-              border: const OutlineInputBorder(),
-              prefixIcon: const Icon(Icons.phone_outlined),
-              labelStyle: AppStyles.caption,
-              hintStyle: AppStyles.caption.copyWith(color: Colors.grey),
+              prefixIcon: Icon(Icons.phone_outlined),
             ),
             style: AppStyles.bodyText1,
             keyboardType: TextInputType.phone,
-            validator:
-                (value) =>
-                    (value == null || value.isEmpty)
-                        ? 'Please enter your phone'
-                        : null,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    // ... (your existing _buildInfoRow method)
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AppColors.appBar, size: 24),
-          const SizedBox(width: 16),
-          SizedBox(
-            width: 80,
-            child: Text(
-              '$label:',
-              style: AppStyles.bodyText1.copyWith(fontWeight: FontWeight.bold),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              value.isEmpty ? 'Not set' : value,
-              style: AppStyles.bodyText1.copyWith(
-                color:
-                    value.isEmpty
-                        ? Colors.grey[600]
-                        : AppStyles.bodyText1.color,
-              ),
-            ),
+            // Add validator for phone if needed
           ),
         ],
       ),
@@ -187,7 +256,7 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    // ... (your existing build method for ProfilePage) ...
+    // This page is pushed, so it needs its own Scaffold & AppBar
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -196,34 +265,81 @@ class _ProfilePageState extends State<ProfilePage> {
           style: AppStyles.appBarTitleStyle,
         ),
         backgroundColor: AppColors.appBar,
-        elevation: AppStyles.elevationMedium,
+        elevation: AppStyles.elevationLow,
         actions: [
-          if (!_isEditing)
-            IconButton(
-              icon: const Icon(
-                Icons.edit_outlined,
-                color: AppColors.notificationIcon,
+          if (!_isLoading) // Only show actions if not globally loading
+            if (!_isEditing)
+              IconButton(
+                icon: const Icon(
+                  Icons.edit_outlined,
+                  color: AppColors.notificationIcon,
+                ),
+                onPressed: () {
+                  if (_userProfile != null) {
+                    // Ensure profile is loaded before enabling edit
+                    setState(() => _isEditing = true);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text('Profile data not loaded yet.'),
+                      ),
+                    );
+                  }
+                },
+                tooltip: 'Edit Profile',
+              )
+            else // In editing mode
+              Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.notificationIcon,
+                    ),
+                    onPressed: () {
+                      // Reset controllers to original values if cancelling edit
+                      if (_userProfile != null) {
+                        _nameController.text = _userProfile!.fullName ?? '';
+                        _emailController.text =
+                            _userProfile!.email ??
+                            Supabase.instance.client.auth.currentUser?.email ??
+                            '';
+                        _phoneController.text = _userProfile!.phoneNumber ?? '';
+                      }
+                      setState(() => _isEditing = false);
+                    },
+                    tooltip: 'Cancel Edit',
+                  ),
+                  IconButton(
+                    // Save button directly in AppBar when editing
+                    icon: const Icon(
+                      Icons.save_outlined,
+                      color: AppColors.notificationIcon,
+                    ),
+                    onPressed: _saveUserProfile,
+                    tooltip: 'Save Profile',
+                  ),
+                ],
               ),
-              onPressed: () => setState(() => _isEditing = true),
-              tooltip: 'Edit Profile',
-            )
-          else
-            IconButton(
-              icon: const Icon(Icons.close, color: AppColors.notificationIcon),
-              onPressed: () {
-                _nameController.text = _userProfile.name;
-                _emailController.text = _userProfile.email;
-                _phoneController.text = _userProfile.phone;
-                setState(() => _isEditing = false);
-              },
-              tooltip: 'Cancel Edit',
-            ),
         ],
       ),
       body:
           _isLoading
               ? const Center(
                 child: CircularProgressIndicator(color: AppColors.appBar),
+              )
+              : _errorMessage != null
+              ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    _errorMessage!,
+                    style: AppStyles.bodyText1.copyWith(
+                      color: AppColors.errorColor,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
               )
               : SingleChildScrollView(
                 padding: AppStyles.pagePadding,
@@ -242,65 +358,54 @@ class _ProfilePageState extends State<ProfilePage> {
                             CircleAvatar(
                               radius: 50,
                               backgroundColor: AppColors.appBar.withOpacity(
-                                0.2,
+                                0.1,
                               ),
-                              child: const Icon(
-                                Icons.person,
-                                size: 60,
-                                color: AppColors.appBar,
-                              ),
+                              // TODO: Implement profile photo display using _userProfile.profilePhotoUrl
+                              child:
+                                  _userProfile?.profilePhotoUrl != null &&
+                                          _userProfile!
+                                              .profilePhotoUrl!
+                                              .isNotEmpty
+                                      ? ClipOval(
+                                        child: Image.network(
+                                          _userProfile!.profilePhotoUrl!,
+                                          fit: BoxFit.cover,
+                                          width: 100,
+                                          height: 100,
+                                          errorBuilder:
+                                              (c, e, s) => const Icon(
+                                                Icons.person,
+                                                size: 60,
+                                                color: AppColors.appBar,
+                                              ),
+                                        ),
+                                      )
+                                      : const Icon(
+                                        Icons.person,
+                                        size: 60,
+                                        color: AppColors.appBar,
+                                      ),
                             ),
                             const SizedBox(height: 20),
-                            _isEditing
-                                ? _buildProfileForm()
-                                : _buildProfileInfo(),
+                            if (_userProfile !=
+                                null) // Only build form/info if profile exists
+                              _isEditing
+                                  ? _buildProfileForm()
+                                  : _buildProfileView()
+                            else if (!_isLoading) // If not loading and profile is still null
+                              const Text("Could not load profile data."),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(height: 24),
-                    if (_isEditing)
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.save_outlined),
-                        label: const Text('Save Profile'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.buttonBackground,
-                          foregroundColor: AppColors.buttonText,
-                          padding: const EdgeInsets.symmetric(vertical: 16.0),
-                          textStyle: AppStyles.buttonTextStyle,
-                        ),
-                        onPressed: _saveUserProfile,
-                      ),
+                    // Save button is now in AppBar when editing, so removed from here
+                    // if (_isEditing)
+                    //   ElevatedButton.icon( /* ... */ ),
                     const SizedBox(height: 20),
                   ],
                 ),
               ),
     );
-  }
-}
-
-// You'll need UserProfile and ProfileService defined, for example:
-// MOCK IMPLEMENTATIONS - MOVE TO DEDICATED FILES (e.g., lib/models/user_profile.dart, lib/services/profile_service.dart)
-class UserProfile {
-  String name;
-  String email;
-  String phone;
-  UserProfile({this.name = '', this.email = '', this.phone = ''});
-  // Add toJson/fromJson if needed
-}
-
-class ProfileService {
-  Future<UserProfile> loadProfile() async {
-    await Future.delayed(const Duration(seconds: 1));
-    return UserProfile(
-      name: "Mock User",
-      email: "mock@example.com",
-      phone: "0700000000",
-    );
-  }
-
-  Future<void> saveProfile(UserProfile profile) async {
-    await Future.delayed(const Duration(seconds: 1));
-    // print("Saving profile: ${profile.name}");
   }
 }

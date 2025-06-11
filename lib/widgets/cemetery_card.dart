@@ -1,6 +1,5 @@
 // lib/widgets/cemetery_card.dart
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart'; // <--- IMPORT URL LAUNCHER
 import '../models/cemetery_model.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
@@ -10,59 +9,6 @@ class CemeteryCard extends StatelessWidget {
   final Cemetery cemetery;
 
   const CemeteryCard({super.key, required this.cemetery});
-
-  // Helper function to launch maps
-  Future<void> _launchMapsUrl(
-    BuildContext context,
-    double? lat,
-    double? lon,
-    String cemeteryName,
-  ) async {
-    if (lat == null || lon == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Location coordinates not available for $cemeteryName.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    // Universal Google Maps URL for directions from current location
-    // saddr (source address) is implicitly current location if not specified on mobile
-    // daddr (destination address) is the latitude,longitude
-    final String googleMapsUrl =
-        'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon';
-
-    // For iOS, you might prefer to offer Apple Maps if available
-    // final String appleMapsUrl = 'https://maps.apple.com/?daddr=$lat,$lon&dirflg=d';
-
-    final Uri uri = Uri.parse(googleMapsUrl); // Default to Google Maps
-
-    // Alternative using platform check (more robust)
-    // String mapUrl;
-    // if (Platform.isIOS) {
-    //   mapUrl = 'https://maps.apple.com/?daddr=$lat,$lon&dirflg=d&q=$cemeteryName';
-    // } else { // Android and other platforms
-    //   mapUrl = 'https://www.google.com/maps/dir/?api=1&destination=$lat,$lon&travelmode=driving';
-    // }
-    // final Uri uri = Uri.parse(mapUrl);
-
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } else {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              'Could not launch maps to $cemeteryName. Please ensure you have a map application installed.',
-            ),
-          ),
-        );
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -91,7 +37,63 @@ class CemeteryCard extends StatelessWidget {
               topRight: AppStyles.cardBorderRadius.topRight,
             ),
             child: Image.network(
-              /* ... image loading as before ... */ cemetery.imageUrl,
+              cemetery.imageUrl,
+              height: 150,
+              fit: BoxFit.cover,
+              loadingBuilder: (
+                BuildContext context,
+                Widget child,
+                ImageChunkEvent? loadingProgress,
+              ) {
+                if (loadingProgress == null) return child;
+                return Container(
+                  height: 150,
+                  color: Colors.grey[200],
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      value:
+                          loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                      color: AppColors.appBar,
+                    ),
+                  ),
+                );
+              },
+              errorBuilder: (
+                BuildContext context,
+                Object exception,
+                StackTrace? stackTrace,
+              ) {
+                return Container(
+                  height: 150,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.only(
+                      topLeft: AppStyles.cardBorderRadius.topLeft,
+                      topRight: AppStyles.cardBorderRadius.topRight,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.broken_image_outlined,
+                        color: Colors.grey[600],
+                        size: 40,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Image unavailable',
+                        style: AppStyles.caption.copyWith(
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           ),
           Padding(
@@ -118,7 +120,17 @@ class CemeteryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 12.0),
                 if (cemetery.totalSpots > 0)
-                  ClipRRect(/* ... progress bar ... */),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: progress,
+                      backgroundColor: AppColors.progressBarTrack,
+                      valueColor: const AlwaysStoppedAnimation<Color>(
+                        AppColors.progressBarFill,
+                      ),
+                      minHeight: 10,
+                    ),
+                  ),
                 if (cemetery.totalSpots > 0) const SizedBox(height: 4.0),
                 if (cemetery.totalSpots > 0)
                   Text(
@@ -132,23 +144,30 @@ class CemeteryCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton.icon(
-                      icon: const Icon(Icons.directions_outlined, size: 20),
-                      label: const Text('Directions'),
-                      onPressed: () {
-                        // Use the helper function to launch maps
-                        _launchMapsUrl(
-                          context,
-                          cemetery.latitude,
-                          cemetery.longitude,
-                          cemetery.name,
-                        );
-                      },
-                    ),
-                    const SizedBox(width: 8),
+                    // Directions button removed
                     ElevatedButton.icon(
                       icon: const Icon(Icons.event_seat_outlined, size: 18),
-                      label: const Text('Book Spot'),
+                      label: const Text('Book Spots'),
+                      style: ElevatedButton.styleFrom(
+                        // <<--- EXPLICIT STYLING ADDED/CONFIRMED
+                        backgroundColor:
+                            AppColors.buttonBackground, // Your desired green
+                        foregroundColor:
+                            AppColors
+                                .buttonText, // Your desired text/icon color (e.g., white)
+                        textStyle:
+                            AppStyles
+                                .buttonTextStyle, // Use consistent button text style
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              AppStyles
+                                  .buttonBorderRadius, // Use consistent button border radius
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ), // Adjust padding if needed
+                      ),
                       onPressed: () {
                         Navigator.push(
                           context,

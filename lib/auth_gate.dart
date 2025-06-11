@@ -1,10 +1,13 @@
 // lib/auth_gate.dart
-import 'dart:async'; // For StreamSubscription
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/welcome_screen.dart';
-import 'screens/main_screen.dart';
-import '../constants/app_colors.dart';
+import 'screens/main_screen.dart'; // User's main screen
+import 'screens/admin/admin_dashboard_screen.dart'; // Admin's main screen
+import 'models/user_profile_model.dart'; // To parse profile
+import 'services/auth_service.dart'; // To fetch profile
+import 'constants/app_colors.dart';
 
 class AuthGate extends StatefulWidget {
   const AuthGate({super.key});
@@ -16,89 +19,94 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   StreamSubscription<AuthState>? _authSubscription;
   Session? _currentSession;
+  UserProfile? _userProfile; // To store the fetched user profile
   bool _isLoading = true;
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
     super.initState();
     print("AuthGate: initState called");
-    _initializeSession();
+    _initializeSessionAndProfile();
 
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen(
       (AuthState data) {
-        final sessionUserID = data.session?.user?.id; // Get it once
+        final sessionUserID = data.session?.user?.id;
         print(
-          "AuthGate: AuthState changed! Event: ${data.event}, Session User ID: ${sessionUserID ?? 'N/A'}, Has Session: ${data.session != null}",
+          "AuthGate: AuthState changed! Event: ${data.event}, Session User ID: ${sessionUserID ?? 'N/A'}",
         );
-        if (!mounted) {
-          print("AuthGate: onAuthStateChange - no longer mounted, returning.");
-          return;
-        }
+        if (!mounted) return;
+
         setState(() {
           _currentSession = data.session;
-          if (_isLoading) {
-            _isLoading = false;
-          }
         });
+
+        if (data.session != null && data.session!.user != null) {
+          _fetchUserProfile(
+            data.session!.user.id,
+          ); // Fetch profile on sign in/refresh
+        } else {
+          // User signed out
+          setState(() {
+            _userProfile = null;
+            if (_isLoading) _isLoading = false; // If was still initial loading
+          });
+        }
       },
       onError: (error) {
-        print("AuthGate: Auth Stream Error: $error");
-        if (!mounted) return;
-        setState(() {
-          _currentSession = null;
-          _isLoading = false;
-        });
-      },
-      onDone: () {
-        print("AuthGate: Auth Stream Done");
+        /* ... */
       },
     );
   }
 
-  Future<void> _initializeSession() async {
-    print("AuthGate: _initializeSession called");
-    if (!mounted) {
-      print("AuthGate: _initializeSession - no longer mounted, returning.");
-      return;
-    }
+  Future<void> _initializeSessionAndProfile() async {
+    print("AuthGate: _initializeSessionAndProfile called");
+    if (!mounted) return;
+    setState(() => _isLoading = true);
     try {
-      // Assign to a local variable first to avoid multiple calls to currentSession getter
-      final Session? session = Supabase.instance.client.auth.currentSession;
-      final String? sessionUserID = session?.user?.id; // Get it once
-
-      print(
-        "AuthGate: Initial session check - User ID: ${sessionUserID ?? 'N/A'}, Has Session: ${session != null}",
-      );
-      if (mounted) {
-        setState(() {
-          _currentSession = session;
-          _isLoading = false;
-        });
+      final session = Supabase.instance.client.auth.currentSession;
+      if (session != null && session.user != null) {
+        _currentSession = session; // Set session first
+        await _fetchUserProfile(
+          session.user.id,
+        ); // Then attempt to fetch profile
       }
+      // If session is null, _userProfile will remain null
     } catch (e) {
-      print("AuthGate: Error initializing session: $e");
+      print("AuthGate: Error initializing session/profile: $e");
+      _currentSession = null;
+      _userProfile = null;
+    } finally {
       if (mounted) {
-        setState(() {
-          _currentSession = null;
-          _isLoading = false;
-        });
+        setState(() => _isLoading = false);
       }
+    }
+  }
+
+  Future<void> _fetchUserProfile(String userId) async {
+    print("AuthGate: Fetching profile for user ID: $userId");
+    // Potentially set a loading state specific to profile fetching if needed
+    final profile = await _authService.getUserProfile(userId);
+    if (mounted) {
+      setState(() {
+        _userProfile = profile;
+        // _isLoading can be set to false here if it wasn't already by _initializeSessionAndProfile
+        // This ensures that even if session exists, we wait for profile role before deciding the screen
+      });
+      print("AuthGate: Profile fetched. Role: ${_userProfile?.role}");
     }
   }
 
   @override
   void dispose() {
-    print("AuthGate: dispose called");
     _authSubscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final String? currentSessionUserID =
-        _currentSession?.user?.id; // Get it once
     print(
-      "AuthGate: Build triggered. isLoading: $_isLoading, Has Session: ${_currentSession != null}, Session User ID: ${currentSessionUserID ?? 'N/A'}",
+      "AuthGate: Build. isLoading: $_isLoading, Has Session: ${_currentSession != null}, User Role: ${_userProfile?.role}",
     );
 
     if (_isLoading) {
@@ -108,13 +116,25 @@ class _AuthGateState extends State<AuthGate> {
       );
     }
 
-    // If _currentSession is not null, it implies _currentSession.user is also not null.
-    if (_currentSession != null) {
-      // CORRECTED CONDITION
-      print("AuthGate: User is logged in, navigating to MainScreen.");
-      return const MainScreen();
+    if (_currentSession != null && _userProfile != null) {
+      // User is logged in and profile is fetched
+      if (_userProfile!.role == 'cemetery_manager' ||
+          _userProfile!.role == 'system_super_admin') {
+        print(
+          "AuthGate: Navigating to AdminDashboardScreen for role: ${_userProfile!.role}",
+        );
+        // Pass necessary admin-specific data if needed
+        return AdminDashboardScreen(userProfile: _userProfile!);
+      } else {
+        // Default to 'user' role
+        print(
+          "AuthGate: Navigating to MainScreen for role: ${_userProfile!.role}",
+        );
+        return const MainScreen();
+      }
     } else {
-      print("AuthGate: User is NOT logged in, navigating to WelcomeScreen.");
+      // Not logged in or profile couldn't be fetched
+      print("AuthGate: Navigating to WelcomeScreen (no session or no profile)");
       return const WelcomeScreen();
     }
   }

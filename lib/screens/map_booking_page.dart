@@ -70,6 +70,12 @@ class _MapBookingPageState extends State<MapBookingPage> {
         return const Color.fromARGB(255, 80, 47, 7);
       case SpotStatus.used:
         return Colors.red.shade700;
+      case SpotStatus.maintenance:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+      case SpotStatus.unknown:
+        // TODO: Handle this case.
+        throw UnimplementedError();
     }
   }
 
@@ -93,7 +99,13 @@ class _MapBookingPageState extends State<MapBookingPage> {
         return short ? "Pend" : "Pending";
       case SpotStatus.used:
         return short ? "Occ" : "Used";
-      }
+      case SpotStatus.maintenance:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+      case SpotStatus.unknown:
+        // TODO: Handle this case.
+        throw UnimplementedError();
+    }
   }
 
   void _onSpotSelected(CemeterySpot spot) {

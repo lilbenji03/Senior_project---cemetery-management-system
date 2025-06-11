@@ -69,12 +69,13 @@ class _ReservationPageState extends State<ReservationPage> {
     try {
       final userId = supabase.auth.currentUser?.id;
       if (userId == null) {
-        if (mounted)
+        if (mounted) {
           setState(() {
             _allReservations = [];
             _filteredReservations = [];
             _isLoading = false;
           });
+        }
         return;
       }
       final List<dynamic> response = await supabase
@@ -255,10 +256,11 @@ class _ReservationPageState extends State<ReservationPage> {
 
   Future<void> _finalizePayment(Reservation reservation) async {
     if (_selectedBurialDate == null) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select a burial date.')),
         );
+      }
       return;
     }
     final totalCost = _calculateTotalCost(reservation);
@@ -290,21 +292,23 @@ class _ReservationPageState extends State<ReservationPage> {
         setState(() => _completingReservationId = null);
       }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text('Error finalizing booking: $e'),
             backgroundColor: AppColors.errorColor,
           ),
         );
+      }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   Widget _buildBookingCompletionSection(Reservation reservation) {
-    if (_completingReservationId != reservation.id)
+    if (_completingReservationId != reservation.id) {
       return const SizedBox.shrink();
+    }
     double totalCost = _calculateTotalCost(reservation);
     return Container(
       /* ... your existing UI ... */

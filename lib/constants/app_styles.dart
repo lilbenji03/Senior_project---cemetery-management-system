@@ -95,4 +95,6 @@ class AppStyles {
   static const double elevationLow = 2.0;
   static const double elevationMedium = 4.0;
   static const double elevationHigh = 8.0;
+
+  static var subtitleText;
 }

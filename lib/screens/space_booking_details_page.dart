@@ -1,6 +1,5 @@
 // lib/screens/spot_booking_details_page.dart
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cemetery_model.dart';
 import '../models/spot_model.dart';

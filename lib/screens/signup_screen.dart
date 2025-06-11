@@ -138,10 +138,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     keyboardType: TextInputType.emailAddress,
                     validator: (value) {
                       /* ... your email validator ... */
-                      if (value == null || value.isEmpty)
+                      if (value == null || value.isEmpty) {
                         return 'Please enter your email';
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value))
+                      }
+                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
                         return 'Enter a valid email';
+                      }
                       return null;
                     },
                   ),
@@ -178,10 +180,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     obscureText: _obscurePassword,
                     validator: (value) {
                       /* ... your password validator ... */
-                      if (value == null || value.isEmpty)
+                      if (value == null || value.isEmpty) {
                         return 'Please enter a password';
-                      if (value.length < 6)
+                      }
+                      if (value.length < 6) {
                         return 'Password must be at least 6 characters';
+                      }
                       return null;
                     },
                   ),
@@ -208,10 +212,12 @@ class _SignUpScreenState extends State<SignUpScreen> {
                     style: AppStyles.bodyText1,
                     obscureText: _obscureConfirmPassword,
                     validator: (value) {
-                      if (value == null || value.isEmpty)
+                      if (value == null || value.isEmpty) {
                         return 'Please confirm your password';
-                      if (value != _passwordController.text)
+                      }
+                      if (value != _passwordController.text) {
                         return 'Passwords do not match';
+                      }
                       return null;
                     },
                   ),

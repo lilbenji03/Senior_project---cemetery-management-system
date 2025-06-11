@@ -15,139 +15,126 @@ class AuthService {
     required String fullName,
     String? phoneNumber, // Optional
   }) async {
+    print("AuthService: Attempting signUp for email: $email"); // DEBUG
     try {
       final AuthResponse res = await _supabase.auth.signUp(
         email: email,
         password: password,
         data: {
-          // This data can be used by a DB trigger to create a profile
+          // <--- CORRECT: 'data' is a direct named parameter of signUp
           'full_name': fullName,
           'phone_number': phoneNumber,
-          // 'initial_role': 'user' // If you want to set role via trigger data
+          // 'initial_role': 'user' // If your Supabase DB trigger 'handle_new_user' uses this
         },
       );
-
-      // If signup is successful and a user object is returned,
-      // and email confirmation is NOT required or already handled,
-      // you might create the profile row here.
-      // However, it's often better to use a DB trigger on auth.users insert.
-      if (res.user != null) {
-        // Example of creating profile row if not using a trigger
-        // This check avoids errors if email confirmation is enabled and user is not immediately active
-        if (res.user!.aud == 'authenticated') {
-          // Check if user is immediately authenticated
-          await _createProfileOnSignUp(
-            userId: res.user!.id,
-            email: email,
-            fullName: fullName,
-            phoneNumber: phoneNumber,
-          );
-        }
-      }
+      print(
+        "AuthService: Supabase signUp call completed. User: ${res.user?.id}, Session: ${res.session != null}",
+      ); // DEBUG
+      // Profile creation is handled by the Supabase DB trigger 'handle_new_user'.
       return res;
     } on AuthException catch (e) {
-      // print('AuthService SignUp Error: ${e.message}');
-      rethrow; // Rethrow to be caught by UI
+      print(
+        "AuthService: AuthException during signUp: Code: ${e.statusCode}, Message: ${e.message}",
+      ); // DEBUG
+      rethrow;
     } catch (e) {
-      // print('AuthService SignUp Unexpected Error: $e');
+      print("AuthService: Unexpected error during signUp: $e"); // DEBUG
       throw Exception('An unexpected error occurred during sign up.');
     }
   }
 
-  // Helper function to create a profile row if you're not using a DB trigger
-  // Ensure RLS allows this insert for newly authenticated users.
-  Future<void> _createProfileOnSignUp({
-    required String userId,
-    required String email,
-    required String fullName,
-    String? phoneNumber,
-  }) async {
-    try {
-      await _supabase.from('profiles').insert({
-        'id': userId,
-        'full_name': fullName,
-        'email': email, // Storing email in profiles can be convenient
-        'phone_number': phoneNumber,
-        'role': 'user', // Default role
-      });
-    } catch (e) {
-      // print("Error creating profile on sign up: $e");
-      // Decide how to handle this: maybe delete the auth user if profile creation fails critically
-      // or log it and let user complete profile later.
-    }
-  }
+  // _createProfileOnSignUp method has been REMOVED as this logic
+  // should be handled by a Supabase Database Trigger on auth.users inserts.
 
   Future<AuthResponse> signInWithPassword({
     required String email,
     required String password,
   }) async {
+    print("AuthService: Attempting signInWithPassword for email: $email");
     try {
-      return await _supabase.auth.signInWithPassword(
+      final response = await _supabase.auth.signInWithPassword(
         email: email,
         password: password,
       );
+      print(
+        "AuthService: signInWithPassword successful. User: ${response.user?.id}, Session: ${response.session != null}",
+      );
+      return response;
     } on AuthException catch (e) {
-      // print('AuthService SignIn Error: ${e.message}');
+      print(
+        "AuthService: AuthException during signIn: Code: ${e.statusCode}, Message: ${e.message}",
+      );
       rethrow;
     } catch (e) {
-      // print('AuthService SignIn Unexpected Error: $e');
+      print("AuthService: Unexpected error during signIn: $e");
       throw Exception('An unexpected error occurred during sign in.');
     }
   }
 
   Future<void> signOut() async {
+    print("AuthService: Attempting signOut");
     try {
       await _supabase.auth.signOut();
+      print("AuthService: signOut successful");
     } on AuthException catch (e) {
-      // print('AuthService SignOut Error: ${e.message}');
+      print("AuthService: AuthException during signOut: ${e.message}");
       rethrow;
     } catch (e) {
-      // print('AuthService SignOut Unexpected Error: $e');
+      print("AuthService: Unexpected error during signOut: $e");
       throw Exception('An unexpected error occurred during sign out.');
     }
   }
 
   Future<UserProfile?> getUserProfile([String? userId]) async {
     final targetUserId = userId ?? _supabase.auth.currentUser?.id;
-    if (targetUserId == null) return null;
-
+    if (targetUserId == null) {
+      print("AuthService: getUserProfile - No targetUserId.");
+      return null;
+    }
+    print(
+      "AuthService: getUserProfile - Fetching profile for User ID: $targetUserId",
+    );
     try {
       final data =
           await _supabase
               .from('profiles')
               .select()
-              .eq('id', targetUserId)
+              .eq('user_id', targetUserId)
               .single();
+      print("AuthService: getUserProfile - Supabase response: $data");
       return UserProfile.fromJson(
         data,
         targetUserId,
         _supabase.auth.currentUser?.email,
       );
     } catch (e) {
-      // print('AuthService GetUserProfile Error: $e');
-      return null; // Or rethrow / handle error appropriately
+      print("AuthService: GetUserProfile ERROR: $e");
+      return null;
     }
   }
 
   Future<void> updateUserProfile(UserProfile profile) async {
-    if (_supabase.auth.currentUser == null)
+    if (_supabase.auth.currentUser == null) {
+      print("AuthService: updateUserProfile - User not authenticated.");
       throw Exception("User not authenticated");
+    }
+    print(
+      "AuthService: Attempting to update profile for User ID: ${profile.id}",
+    );
     try {
+      final updateData = profile.toJson();
+      updateData.remove('id');
+      updateData.remove('email');
+      updateData.remove('role');
+      updateData.remove('created_at');
+
       await _supabase
           .from('profiles')
-          .update(
-            profile.toJson()..removeWhere(
-              (key, value) =>
-                  key == 'id' ||
-                  key == 'email' ||
-                  key == 'created_at' ||
-                  key == 'updated_at' ||
-                  key == 'role',
-            ),
-          ) // Don't update id, email, role directly here
+          .update(updateData)
           .eq('id', _supabase.auth.currentUser!.id);
+      print("AuthService: updateUserProfile successful.");
     } catch (e) {
-      // print('AuthService UpdateUserProfile Error: $e');
+      print("AuthService: UpdateUserProfile ERROR: $e");
       throw Exception('Failed to update profile.');
     }
   }

@@ -2,11 +2,10 @@
 class UserProfile {
   final String id; // Matches auth.uid()
   String? fullName;
-  String?
-  email; // Often fetched from auth.currentUser or stored for convenience
+  String? email;
   String? phoneNumber;
   String? profilePhotoUrl;
-  String role; // 'user', 'staff_cemetery_manager', 'system_super_admin'
+  String role;
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -27,12 +26,12 @@ class UserProfile {
     String? userEmail,
   ) {
     return UserProfile(
-      id: userId, // Use the auth.uid() passed in
+      id: userId,
       fullName: json['full_name'] as String?,
-      email: userEmail, // Use the email from auth.currentUser
+      email: userEmail,
       phoneNumber: json['phone_number'] as String?,
       profilePhotoUrl: json['profile_photo_url'] as String?,
-      role: json['role'] as String? ?? 'user', // Default to 'user' if null
+      role: json['role'] as String? ?? 'user',
       createdAt:
           DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
@@ -42,14 +41,18 @@ class UserProfile {
     );
   }
 
+  // --- ADD THIS METHOD ---
   Map<String, dynamic> toJson() {
     return {
-      'id': id, // Important for upsert
+      // 'id': id, // Typically not included in update payload body, used in .eq()
       'full_name': fullName,
       'phone_number': phoneNumber,
       'profile_photo_url': profilePhotoUrl,
-      'role': role,
-      // created_at and updated_at are usually handled by the database
+      // 'role': role, // Usually role is not updated by user directly
+      // 'email': email, // Email is usually updated via Supabase Auth methods
+      // 'updated_at': DateTime.now().toIso8601String(), // DB trigger handles this
     };
   }
+
+  // ----------------------
 }
