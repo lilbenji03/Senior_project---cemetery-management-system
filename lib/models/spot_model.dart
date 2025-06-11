@@ -160,6 +160,8 @@ class CemeterySpot {
 
   get dbId => null;
 
+  get sectionName => null;
+
   @override
   String toString() {
     return 'CemeterySpot(dbId: $databaseId, id: $spotIdentifier, cemeteryId: $cemeteryId, status: $status, plotType: $plotType)';

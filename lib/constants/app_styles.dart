@@ -3,14 +3,15 @@ import 'package:flutter/material.dart';
 import 'app_colors.dart';
 
 class AppStyles {
-  static const String fontFamily = 'Roboto';
+  static const String fontFamily =
+      'Roboto'; // Assuming Roboto is in your pubspec.yaml and assets
 
   // --- Text Styles ---
   static const TextStyle appBarTitleStyle = TextStyle(
     color: AppColors.appBarTitle,
     fontFamily: fontFamily,
     fontWeight: FontWeight.w600,
-    fontSize: 25,
+    fontSize: 25, // Note: Your admin dashboard code uses 20 for app bar titles
   );
 
   static const TextStyle cardTitleStyle = TextStyle(
@@ -20,32 +21,43 @@ class AppStyles {
     fontSize: 18,
   );
 
+  // THIS IS THE STYLE THAT WAS MISSING AND CAUSING THE ERROR
+  // Define it based on your needs. For the admin dashboard,
+  // it was used as a base for text like "Dashboard Overview" and card titles.
+  static final TextStyle titleStyle = TextStyle(
+    // Changed from 'var' to 'final TextStyle'
+    color:
+        AppColors
+            .primaryText, // Or AppColors.cardTitle, depending on default usage
+    fontFamily: fontFamily,
+    fontWeight: FontWeight.w600, // Common for titles
+    fontSize: 20, // A good default title size
+  );
+
   static const TextStyle bodyText1 = TextStyle(
-    color: AppColors.primaryText, // Using defined primaryText
+    color: AppColors.primaryText,
     fontFamily: fontFamily,
     fontSize: 16,
     height: 1.5,
   );
 
   static const TextStyle regularText = TextStyle(
-    color: AppColors.primaryText, // Using defined primaryText
+    color: AppColors.primaryText,
     fontFamily: fontFamily,
     fontSize: 16,
   );
 
-  static TextStyle bodyText2 = TextStyle(
-    // Changed to TextStyle from const TextStyle
-    color: AppColors.secondaryText, // Using defined secondaryText
+  static final TextStyle bodyText2 = TextStyle(
+    // Keep as 'final' not 'const' if using .withOpacity
+    color: AppColors.secondaryText,
     fontFamily: fontFamily,
     fontSize: 14,
     height: 1.4,
   );
 
-  static TextStyle caption = TextStyle(
-    // Changed to TextStyle from const TextStyle
-    color: AppColors.secondaryText.withOpacity(
-      0.9,
-    ), // Using defined secondaryText
+  static final TextStyle caption = TextStyle(
+    // Keep as 'final' not 'const' if using .withOpacity
+    color: AppColors.secondaryText.withOpacity(0.9),
     fontFamily: fontFamily,
     fontSize: 12,
   );
@@ -71,6 +83,15 @@ class AppStyles {
     fontWeight: FontWeight.w500,
   );
 
+  // DEFINE subtitleText if you plan to use it
+  static final TextStyle subtitleText = TextStyle(
+    // Changed from 'var' to 'final TextStyle'
+    color: AppColors.secondaryText,
+    fontFamily: fontFamily,
+    fontSize: 16, // Example size, adjust as needed
+    fontWeight: FontWeight.normal,
+  );
+
   // --- Box Shadows ---
   static final List<BoxShadow> cardBoxShadow = [
     BoxShadow(
@@ -83,9 +104,7 @@ class AppStyles {
 
   // --- Borders & Radii ---
   static final BorderRadius cardBorderRadius = BorderRadius.circular(12.0);
-  static final BorderRadius buttonBorderRadius = BorderRadius.circular(
-    8.0,
-  ); // DEFINED
+  static final BorderRadius buttonBorderRadius = BorderRadius.circular(8.0);
 
   // --- Paddings ---
   static const EdgeInsets pagePadding = EdgeInsets.all(16.0);
@@ -95,6 +114,4 @@ class AppStyles {
   static const double elevationLow = 2.0;
   static const double elevationMedium = 4.0;
   static const double elevationHigh = 8.0;
-
-  static var subtitleText;
 }

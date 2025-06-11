@@ -1,66 +1,14 @@
 // lib/screens/admin/admin_dashboard_screen.dart
+import 'package:cmc/screens/admin/admin_overview_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // For Supabase client
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/user_profile_model.dart';
 import '../../constants/app_colors.dart';
 import '../../constants/app_styles.dart';
 import '../../services/auth_service.dart';
-// Removed import for WelcomeScreen as AuthGate handles it
-
-// Import admin management screens
 import 'manage_reservations_admin_screen.dart';
-import 'manage_spots_admin_screen.dart'; // Ensure this file and class exist
-
-// Placeholder for AdminOverviewPage if not in its own file
-class AdminOverviewPage extends StatelessWidget {
-  final UserProfile userProfile;
-  final String? cemeteryId;
-  final String? cemeteryName;
-  const AdminOverviewPage({
-    super.key,
-    required this.userProfile,
-    this.cemeteryId,
-    this.cemeteryName,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // TODO: Build a proper dashboard overview with actual data calls
-    return Padding(
-      padding: AppStyles.pagePadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Dashboard Overview',
-            style: AppStyles.appBarTitleStyle.copyWith(fontSize: 20),
-          ),
-          const SizedBox(height: 16),
-          Card(
-            child: Padding(
-              padding: AppStyles.cardPadding,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Welcome, ${userProfile.fullName ?? userProfile.email}!',
-                  ),
-                  Text('Your Role: ${userProfile.role}'),
-                  if (cemeteryName != null) Text('Managing: $cemeteryName'),
-                  if (cemeteryId != null && cemeteryName == null)
-                    Text(
-                      'Managing Cemetery ID: ${cemeteryId?.substring(0, 8)}...',
-                    ),
-                ],
-              ),
-            ),
-          ),
-          // Add more summary cards here later (e.g., pending reservations, open reports)
-        ],
-      ),
-    );
-  }
-}
+import 'manage_spots_admin_screen.dart';
+import 'manage_reports_admin_screen.dart'; // <<< IMPORT THE NEW SCREEN
 
 class AdminDashboardScreen extends StatefulWidget {
   final UserProfile userProfile;
@@ -73,12 +21,12 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   int _selectedIndex = 0;
-  List<Widget> _adminPages = []; // Initialize as empty
-  List<BottomNavigationBarItem> _navItems = []; // Initialize as empty
+  List<Widget> _adminPages = [];
+  List<BottomNavigationBarItem> _navItems = [];
 
   String? _managedCemeteryId;
   String? _managedCemeteryName;
-  bool _isLoadingDetails = true; // Combined loading state
+  bool _isLoadingDetails = true;
 
   @override
   void initState() {
@@ -87,6 +35,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Future<void> _loadInitialData() async {
+    // ... (existing _loadInitialData logic remains the same) ...
     if (!mounted) return;
     setState(() => _isLoadingDetails = true);
 
@@ -104,17 +53,16 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             _managedCemeteryId = response['id'] as String?;
             _managedCemeteryName = response['name'] as String?;
           } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  "Error: Not assigned to manage a specific cemetery.",
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text("Error: Not assigned to manage any cemetery."),
+                  backgroundColor: AppColors.errorColor,
                 ),
-                backgroundColor: AppColors.errorColor,
-              ),
-            );
-            // Consider logging out or showing a restricted UI
-            AuthService().signOut(); // Example action
-            return; // Stop further processing
+              );
+              AuthService().signOut();
+            }
+            return;
           }
         }
       } catch (e) {
@@ -125,18 +73,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
               backgroundColor: AppColors.errorColor,
             ),
           );
-          // Consider logging out
           AuthService().signOut();
-          return;
         }
+        return;
       }
     } else if (widget.userProfile.role == 'system_super_admin') {
-      // Super admin doesn't manage one specific cemetery by default via manager_user_id
-      // They might select one, or see all. For now, _managedCemeteryId remains null.
-      _managedCemeteryName = "All Cemeteries (Super Admin)"; // Default display
+      _managedCemeteryName = "All Cemeteries (Super Admin)";
     }
 
-    _buildNavigation(); // Build navigation after attempting to fetch assignments
+    _buildNavigation(); // This will now include the Reports tab
     if (mounted) {
       setState(() => _isLoadingDetails = false);
     }
@@ -145,10 +90,14 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   void _buildNavigation() {
     List<Widget> pages = [];
     List<BottomNavigationBarItem> items = [];
+    bool isSuperAdmin = widget.userProfile.role == 'system_super_admin';
+    bool isCemeteryManagerWithAssignment =
+        widget.userProfile.role == 'cemetery_manager' &&
+        _managedCemeteryId != null;
 
-    // Page 1: Overview
+    // Page 1: Overview (Always available)
     pages.add(
-      AdminOverviewPage(
+      AdminOverviewScreen(
         userProfile: widget.userProfile,
         cemeteryId: _managedCemeteryId,
         cemeteryName: _managedCemeteryName,
@@ -163,14 +112,10 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     );
 
     // Page 2: Reservations
-    // Only add if cemetery_manager has an assigned cemetery OR if system_super_admin
-    if ((widget.userProfile.role == 'cemetery_manager' &&
-            _managedCemeteryId != null) ||
-        widget.userProfile.role == 'system_super_admin') {
+    if (isCemeteryManagerWithAssignment || isSuperAdmin) {
       pages.add(
         ManageReservationsAdminScreen(
-          cemeteryId:
-              _managedCemeteryId, // This will be null for super_admin initially, screen must handle it
+          cemeteryId: _managedCemeteryId,
           cemeteryName: _managedCemeteryName,
         ),
       );
@@ -184,13 +129,9 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     }
 
     // Page 3: Spots Management
-    // Only add if cemetery_manager has an assigned cemetery OR if system_super_admin
-    if ((widget.userProfile.role == 'cemetery_manager' &&
-            _managedCemeteryId != null) ||
-        widget.userProfile.role == 'system_super_admin') {
+    if (isCemeteryManagerWithAssignment || isSuperAdmin) {
       pages.add(
         ManageSpotsAdminScreen(
-          // Ensure this screen can handle a null cemeteryId for super_admin if needed
           cemeteryId: _managedCemeteryId,
           cemeteryName: _managedCemeteryName,
         ),
@@ -204,17 +145,37 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       );
     }
 
-    // TODO: Add other pages like Reports, Services based on roles and cemetery context
+    // Page 4: Reports (Available for both roles, screen handles context)
+    if (isCemeteryManagerWithAssignment || isSuperAdmin) {
+      // Or just `true` if all admins should see reports
+      pages.add(
+        ManageReportsAdminScreen(
+          cemeteryId: _managedCemeteryId,
+          cemeteryName: _managedCemeteryName,
+          isSuperAdmin: isSuperAdmin,
+        ),
+      );
+      items.add(
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.report_problem_outlined),
+          activeIcon: Icon(Icons.report_problem),
+          label: 'Reports',
+        ),
+      );
+    }
+    // TODO: Add other pages like Users (for super_admin), Settings, etc.
 
     if (mounted) {
       setState(() {
         _adminPages = pages;
         _navItems = items;
+        // Adjust selectedIndex if it's out of bounds after rebuilding nav
         if (_selectedIndex >= _adminPages.length && _adminPages.isNotEmpty) {
           _selectedIndex = 0;
         } else if (_adminPages.isEmpty) {
-          _selectedIndex =
-              0; // Or handle this case by showing an error/empty state
+          // This case should ideally not happen if Overview is always present
+          // Or handle by showing an error/empty state for the whole dashboard
+          _selectedIndex = 0;
         }
       });
     }
@@ -230,28 +191,42 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // ... (existing build method for loading, error, and main scaffold remains the same) ...
+    // The BottomNavigationBar will automatically pick up the new item.
+    // The AppBar title will also update based on the selected tab's label.
     if (_isLoadingDetails) {
       return Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(
           title: Text(
             "Loading Admin Portal...",
-            style: AppStyles.appBarTitleStyle,
+            style: AppStyles.appBarTitleStyle.copyWith(
+              color: AppColors.appBarTitle,
+            ),
           ),
           backgroundColor: AppColors.appBar,
+          iconTheme: const IconThemeData(color: AppColors.appBarTitle),
         ),
-        body: const Center(
-          child: CircularProgressIndicator(color: AppColors.appBar),
+        body: Center(
+          child: CircularProgressIndicator(color: AppColors.activeTab),
         ),
       );
     }
 
-    // This handles the case where a cemetery_manager has no assigned cemetery after loading
     if (widget.userProfile.role == 'cemetery_manager' &&
-        _managedCemeteryId == null) {
+        _managedCemeteryId == null &&
+        !_isLoadingDetails) {
       return Scaffold(
+        backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: Text("Assignment Error", style: AppStyles.appBarTitleStyle),
+          title: Text(
+            "Assignment Error",
+            style: AppStyles.appBarTitleStyle.copyWith(
+              color: AppColors.appBarTitle,
+            ),
+          ),
           backgroundColor: AppColors.appBar,
+          iconTheme: const IconThemeData(color: AppColors.appBarTitle),
         ),
         body: Padding(
           padding: AppStyles.pagePadding,
@@ -262,21 +237,38 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 const Icon(
                   Icons.error_outline,
                   color: AppColors.errorColor,
-                  size: 48,
+                  size: 60,
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Text(
                   "You are not assigned to manage a specific cemetery. Please contact the system administrator.",
                   textAlign: TextAlign.center,
-                  style: AppStyles.bodyText1,
+                  style: AppStyles.titleStyle.copyWith(
+                    fontSize: 18,
+                    color: AppColors.primaryText,
+                  ),
                 ),
-                const SizedBox(height: 24),
-                ElevatedButton(
+                const SizedBox(height: 12),
+                Text(
+                  "You will be logged out.",
+                  textAlign: TextAlign.center,
+                  style: AppStyles.bodyText2.copyWith(
+                    color: AppColors.secondaryText,
+                  ),
+                ),
+                const SizedBox(height: 30),
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.logout, color: AppColors.buttonText),
+                  label: const Text(
+                    "Logout",
+                    style: TextStyle(color: AppColors.buttonText),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.buttonBackground,
+                  ),
                   onPressed: () async {
                     await AuthService().signOut();
-                    // AuthGate will navigate to login
                   },
-                  child: const Text("Logout"),
                 ),
               ],
             ),
@@ -285,31 +277,40 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       );
     }
 
-    String appBarTitle =
+    String pageTitle =
         _navItems.isNotEmpty &&
                 _selectedIndex < _navItems.length &&
                 _adminPages.isNotEmpty
             ? _navItems[_selectedIndex].label ?? "Admin"
             : "Admin Portal";
 
+    String appBarTitlePrefix = "";
     if (widget.userProfile.role == 'cemetery_manager' &&
         _managedCemeteryName != null) {
-      appBarTitle = "$_managedCemeteryName - $appBarTitle";
-    } else if (widget.userProfile.role == 'system_super_admin' &&
-        _managedCemeteryName != null) {
-      // Super admin might be viewing a specific cemetery if they selected one
-      appBarTitle = "$_managedCemeteryName - $appBarTitle";
+      appBarTitlePrefix = "$_managedCemeteryName - ";
     } else if (widget.userProfile.role == 'system_super_admin') {
-      appBarTitle = "Super Admin - $appBarTitle";
+      if (_managedCemeteryId != null &&
+          _managedCemeteryName != "All Cemeteries (Super Admin)") {
+        appBarTitlePrefix = "$_managedCemeteryName - ";
+      } else {
+        appBarTitlePrefix = "Super Admin - ";
+      }
     }
+    String finalAppBarTitle = "$appBarTitlePrefix$pageTitle";
 
     return Scaffold(
+      backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(appBarTitle, style: AppStyles.appBarTitleStyle),
+        title: Text(
+          finalAppBarTitle,
+          style: AppStyles.appBarTitleStyle.copyWith(
+            color: AppColors.appBarTitle,
+          ),
+        ),
         backgroundColor: AppColors.appBar,
+        elevation: 1.0,
+        iconTheme: const IconThemeData(color: AppColors.appBarTitle),
         actions: [
-          // TODO: Add a cemetery selector for system_super_admin if _managedCemeteryId is null
-          // and _allCemeteriesForPicker is populated.
           IconButton(
             icon: const Icon(
               Icons.logout_outlined,
@@ -324,9 +325,36 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       ),
       body:
           _adminPages.isEmpty
-              ? const Center(
-                child: Text(
-                  "No management modules available for your role or selection.",
+              ? Center(
+                child: Padding(
+                  padding: AppStyles.pagePadding,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        Icons.layers_clear_outlined,
+                        size: 60,
+                        color: AppColors.secondaryText.withOpacity(0.7),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        "No management modules available.",
+                        textAlign: TextAlign.center,
+                        style: AppStyles.titleStyle.copyWith(
+                          color: AppColors.secondaryText,
+                          fontSize: 18,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        "This might be due to your role or current selection context.",
+                        textAlign: TextAlign.center,
+                        style: AppStyles.bodyText2.copyWith(
+                          color: AppColors.secondaryText,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               )
               : IndexedStack(index: _selectedIndex, children: _adminPages),
@@ -337,12 +365,15 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
                 currentIndex: _selectedIndex,
                 onTap: _onItemTapped,
                 type: BottomNavigationBarType.fixed,
+                backgroundColor: AppColors.cardBackground,
                 selectedItemColor: AppColors.activeTab,
-                unselectedItemColor: AppColors.inactiveTab,
+                unselectedItemColor: AppColors.inactiveTab.withOpacity(0.8),
                 selectedLabelStyle: AppStyles.caption.copyWith(
                   fontWeight: FontWeight.w600,
                 ),
                 unselectedLabelStyle: AppStyles.caption,
+                showUnselectedLabels: true,
+                elevation: 4.0,
               )
               : null,
     );

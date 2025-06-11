@@ -1,16 +1,21 @@
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/spot_model.dart'; // For CemeterySpot and SpotStatus
-import '../../constants/app_colors.dart'; // Assuming using main app's constants
-import '../../constants/app_styles.dart'; // Assuming using main app's constants
+import '../../constants/app_colors.dart';
+import '../../constants/app_styles.dart';
 
-final supabase = Supabase.instance.client;
+// final supabase = Supabase.instance.client; // Already available globally via Supabase.instance.client
+
+extension StringExtension on String {
+  // Keep this helper or move to a utils file
+  String capitalizeFirst() {
+    if (isEmpty) return this;
+    return "${this[0].toUpperCase()}${substring(1)}";
+  }
+}
 
 class ManageSpotsAdminScreen extends StatefulWidget {
-  final String?
-  cemeteryId; // Nullable if system_super_admin views all or selects
+  final String? cemeteryId;
   final String? cemeteryName;
 
   const ManageSpotsAdminScreen({super.key, this.cemeteryId, this.cemeteryName});
@@ -23,34 +28,82 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
   List<CemeterySpot> _spots = [];
   bool _isLoading = true;
   String? _errorMessage;
-  SpotStatus? _filterStatus; // To filter spots by status
+  SpotStatus? _filterStatus;
 
-  // Define filter options
-  final List<Map<String, dynamic>> _statusFilterOptions = [
-    {'value': null, 'display': 'All Statuses'}, // null value for 'all'
-    ...SpotStatus.values
-        .map((s) => {'value': s, 'display': s.name.capitalizeFirst()})
-        .toList(),
-  ];
+  late final List<Map<String, dynamic>> _statusFilterOptions;
 
   @override
   void initState() {
     super.initState();
-    _fetchCemeterySpots();
+    // Initialize filter options here because SpotStatus.values might not be const if SpotStatus itself is complex
+    _statusFilterOptions = [
+      {'value': null, 'display': 'All Statuses'},
+      ...SpotStatus.values
+          .where(
+            (s) => s != SpotStatus.unknown,
+          ) // Exclude 'unknown' from filter options
+          .map((s) => {'value': s, 'display': s.displayName}) // Use displayName
+          .toList(),
+    ];
+    print(
+      "ManageSpotsAdminScreen initState: Cemetery ID: ${widget.cemeteryId}",
+    );
+    if (widget.cemeteryId != null) {
+      _fetchCemeterySpots();
+    } else {
+      // Handle case for super admin where no cemetery is initially selected for spot management
+      setState(() {
+        _isLoading = false;
+        _errorMessage =
+            "Please select a cemetery to view spots."; // Or just show an empty state
+        _spots = [];
+      });
+      print(
+        "ManageSpotsAdminScreen: No cemeteryId provided, not fetching spots.",
+      );
+    }
   }
 
   @override
   void didUpdateWidget(ManageSpotsAdminScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Refetch if cemeteryId or filter changes
-    if (widget.cemeteryId != oldWidget.cemeteryId ||
-        _filterStatus != _filterStatus) {
-      _fetchCemeterySpots();
+    if (widget.cemeteryId != oldWidget.cemeteryId) {
+      print(
+        "ManageSpotsAdminScreen didUpdateWidget: cemeteryId changed from ${oldWidget.cemeteryId} to ${widget.cemeteryId}. Refetching.",
+      );
+      // Reset filter when cemetery changes, or decide if filter should persist
+      // setState(() {
+      //   _filterStatus = null;
+      // });
+      if (widget.cemeteryId != null) {
+        _fetchCemeterySpots();
+      } else {
+        setState(() {
+          _isLoading = false;
+          _spots = [];
+          _errorMessage = "No cemetery selected.";
+        });
+      }
     }
+    // Note: _filterStatus changes are handled by its onChanged callback calling _fetchCemeterySpots
   }
 
   Future<void> _fetchCemeterySpots() async {
     if (!mounted) return;
+    // If cemeteryId is null, and this screen requires it, don't proceed.
+    // This check is important if this function can be called from places other than initState/didUpdateWidget.
+    if (widget.cemeteryId == null) {
+      print(
+        "ManageSpotsAdminScreen _fetchCemeterySpots: cemeteryId is null. Aborting fetch.",
+      );
+      setState(() {
+        _isLoading = false;
+        _spots = []; // Clear spots
+        _errorMessage = "No cemetery selected to fetch spots.";
+      });
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -60,97 +113,64 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
     );
 
     try {
-      PostgrestTransformBuilder<PostgrestList> query =
-          supabase
-              .from('cemetery_spots')
-              .select(); // Select all columns needed by CemeterySpot.fromJson
+      // Start with the base query (PostgrestQueryBuilder)
+      var request = Supabase.instance.client
+          .from(
+            'cemetery_spots',
+          ) // Use your actual table name, e.g., 'burial_spots'
+          .select('''
+            id, 
+            spot_label, 
+            spot_identifier, 
+            status, 
+            plot_type, 
+            cemetery_id, 
+            created_at, 
+            updated_at,
+            plots ( section_id, sections ( name ) ) 
+          '''); // Adjust select to your CemeterySpot.fromJson needs
 
-      // In _fetchCemeterySpots (or _fetchAdminReservations)
+      // Conditionally apply filters
+      // cemeteryId is already checked before calling this function, but this is a safeguard
+      // The .eq for cemetery_id is the most important for your requirement
+      request = request.eq('cemetery_id', widget.cemeteryId!);
+      print("Filtering by cemetery_id: ${widget.cemeteryId}");
 
-      Future<void> _fetchCemeterySpots() async {
-        // Or _fetchAdminReservations
-        if (!mounted) return;
-        setState(() {
-          /* ... isLoading ... */
-        });
-        print(
-          "ManageSpotsAdminScreen: Fetching spots. Cemetery ID: ${widget.cemeteryId}, Filter: ${_filterStatus?.name}",
-        );
-
-        try {
-          // Start with the base query (PostgrestQueryBuilder)
-          // The type of 'request' will be PostgrestQueryBuilder initially
-          var request =
-              supabase
-                  .from('cemetery_spots') // Or 'reservations'
-                  .select(); // Add your select string here for reservations: .select('''id, name, profiles (email)''')
-
-          // Conditionally apply filters
-          if (widget.cemeteryId != null) {
-            // .eq() returns a PostgrestFilterBuilder. 'request' type updates.
-            request = request.eq('cemetery_id', widget.cemeteryId!);
-            print("Filtering by cemetery_id: ${widget.cemeteryId}");
-          }
-
-          if (_filterStatus != null) {
-            // .eq() can be called on both PostgrestQueryBuilder and PostgrestFilterBuilder.
-            // 'request' type remains or becomes PostgrestFilterBuilder.
-            request = request.eq('status', _filterStatus!.name);
-            print("Filtering by status: ${_filterStatus!.name}");
-          }
-
-          // Finally, apply order and execute
-          // .order() returns a PostgrestTransformBuilder.
-          // We await the result of this final chained operation.
-          final response = await request.order(
-            'spot_identifier',
-            ascending: true,
-          ); // Or 'requested_at' for reservations
-
-          print(
-            "Supabase response received. Length: ${(response as List).length}",
-          );
-
-          if (mounted) {
-            setState(() {
-              // Assuming CemeterySpot.fromJson or Reservation.fromJson
-              _spots =
-                  (response as List)
-                      .map((data) => CemeterySpot.fromJson(data))
-                      .toList();
-              _isLoading = false;
-            });
-            print("Parsed ${_spots.length} spots.");
-          }
-        } catch (e) {
-          print("ERROR fetching: ${e.toString()}");
-          if (mounted) {
-            setState(() {
-              /* ... handle error ... */
-            });
-          }
-        }
+      if (_filterStatus != null) {
+        request = request.eq(
+          'status',
+          _filterStatus!.name,
+        ); // Use the string name of the enum
+        print("Filtering by status: ${_filterStatus!.name}");
       }
 
-      query = query.order(
-        'spot_identifier',
+      // Finally, apply order and execute
+      final response = await request.order(
+        'spot_identifier', // Or 'spot_label' - ensure this column exists
         ascending: true,
-      ); // Order by spot ID
+      );
 
-      final response = await query;
+      print("Supabase response received. Length: ${(response).length}");
 
       if (mounted) {
         setState(() {
           _spots =
-              (response as List)
-                  .map((data) => CemeterySpot.fromJson(data))
+              (response) // No need to cast to List here, it's already PostgrestList which is List<Map>
+                  .map(
+                    (data) =>
+                        CemeterySpot.fromJson(data as Map<String, dynamic>),
+                  )
                   .toList();
           _isLoading = false;
         });
-        print("ManageSpotsAdminScreen: Fetched ${_spots.length} spots.");
+        print(
+          "Parsed ${_spots.length} spots for cemetery ${widget.cemeteryId}.",
+        );
       }
-    } catch (e) {
+    } catch (e, s) {
+      // Catch stacktrace for more debug info
       print("ManageSpotsAdminScreen: ERROR fetching spots: $e");
+      print("Stacktrace: $s");
       if (mounted) {
         setState(() {
           _errorMessage = "Failed to load spots: ${e.toString()}";
@@ -161,30 +181,39 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
     }
   }
 
-  Future<void> _updateSpotStatus(String spotDbId, SpotStatus newStatus) async {
+  Future<void> _updateSpotStatus(
+    String spotDatabaseId,
+    SpotStatus newStatus,
+  ) async {
     if (!mounted) return;
-    // Show a quick loading indication on the specific spot or globally
-    // For simplicity, global loading for now
-    setState(() => _isLoading = true);
+    setState(
+      () => _isLoading = true,
+    ); // Or use a more localized loading indicator
     print(
-      "ManageSpotsAdminScreen: Updating spot $spotDbId to status ${newStatus.name}",
+      "ManageSpotsAdminScreen: Updating spot $spotDatabaseId to status ${newStatus.name}",
     );
     try {
-      await supabase
-          .from('cemetery_spots')
+      await Supabase.instance.client
+          .from('cemetery_spots') // Use your actual table name
           .update({
-            'status': newStatus.name,
-            'updated_at': DateTime.now().toIso8601String(),
+            'status': newStatus.name, // Send the string name of the enum
+            'updated_at':
+                DateTime.now()
+                    .toIso8601String(), // If you manage this client-side
           })
-          .eq('id', spotDbId); // 'id' should be the PK of cemetery_spots table
+          .eq(
+            'id',
+            spotDatabaseId,
+          ); // 'id' should be the PK of your spots table
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Spot status updated to ${newStatus.name.capitalizeFirst()}!',
+              'Spot status updated to ${newStatus.displayName}!', // Use displayName
             ),
-            backgroundColor: AppColors.spotsAvailable,
+            backgroundColor:
+                AppColors.statusApproved, // Or a generic success color
           ),
         );
         _fetchCemeterySpots(); // Refresh the list
@@ -198,112 +227,115 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
             backgroundColor: AppColors.errorColor,
           ),
         );
-        setState(() => _isLoading = false); // Stop loading on error
+        setState(() => _isLoading = false);
       }
     }
-    // No finally here, _fetchCemeterySpots will set _isLoading = false
   }
 
   Color _getSpotColor(SpotStatus status) {
-    // Use your existing color logic from user app's CemeterySpotListPage
     switch (status) {
       case SpotStatus.available:
-        return Colors.grey.shade300;
+        return Colors.green.shade100; // Softer available
       case SpotStatus.booked:
-        return Colors.orange.shade600;
+        return Colors.orange.shade100; // Softer booked/reserved
       case SpotStatus.used:
-        return Colors.red.shade700;
+        return Colors.red.shade100; // Softer used/occupied
       case SpotStatus.pendingApproval:
-        return Colors.yellow.shade700;
+        return Colors.yellow.shade100;
       case SpotStatus.maintenance:
-        return Colors.blueGrey.shade400;
+        return Colors.blueGrey.shade100;
       case SpotStatus.unknown:
-        return Colors.black26;
+        return Colors.grey.shade300;
     }
   }
 
   Color _getSpotTextColor(SpotStatus status) {
-    switch (status) {
-      case SpotStatus.available:
-      case SpotStatus.pendingApproval:
-      case SpotStatus.maintenance:
-        return Colors.black87;
-      default:
-        return Colors.white;
-    }
+    // Generally darker text on lighter backgrounds
+    return Colors.black87;
   }
 
   void _showSpotActionsDialog(CemeterySpot spot) {
-    // Allow admin to change status, e.g., mark for maintenance, or manually make available
-    // For simplicity, let's just allow changing to 'available' or 'maintenance'
-    List<SpotStatus> possibleNewStatuses = [
-      SpotStatus.available,
-      SpotStatus.maintenance,
-    ];
-    if (spot.status == SpotStatus.available) {
-      possibleNewStatuses.remove(SpotStatus.available);
-    } else if (spot.status == SpotStatus.maintenance) {
-      possibleNewStatuses.remove(SpotStatus.maintenance);
-    }
+    List<SpotStatus> possibleNewStatuses =
+        SpotStatus.values
+            .where((s) => s != spot.status && s != SpotStatus.unknown)
+            .toList();
+
+    SpotStatus? selectedStatusForDialog =
+        spot.status; // Pre-select current status or null
 
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
-        return AlertDialog(
-          title: Text("Manage Spot: ${spot.spotIdentifier}"),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                "Current Status: ${spot.status.name.capitalizeFirst()}",
-                style: AppStyles.bodyText1,
+        return StatefulBuilder(
+          // Use StatefulBuilder if you need to update dialog state, e.g., for Radio
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text("Manage Spot: ${spot.spotIdentifier}"),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 20,
               ),
-              const SizedBox(height: 16),
-              Text(
-                "Change status to:",
-                style: AppStyles.bodyText1.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (possibleNewStatuses.isEmpty)
-                const Text(
-                  "No direct status changes available for this spot currently.",
-                ),
-              ...possibleNewStatuses
-                  .map(
-                    (newStatus) => ListTile(
-                      title: Text(newStatus.name.capitalizeFirst()),
-                      leading: Radio<SpotStatus>(
+              content: SingleChildScrollView(
+                // In case of many statuses
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Current Status: ${spot.status.displayName}",
+                      style: AppStyles.bodyText1,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Change status to:",
+                      style: AppStyles.bodyText1.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    if (possibleNewStatuses.isEmpty)
+                      const Text("No other statuses available."),
+                    ...possibleNewStatuses.map(
+                      (newStatus) => RadioListTile<SpotStatus>(
+                        title: Text(newStatus.displayName),
                         value: newStatus,
                         groupValue:
-                            null, // No group needed for one-off selection
-                        onChanged: (SpotStatus? selectedStatus) {
-                          if (selectedStatus != null) {
-                            Navigator.of(
-                              dialogContext,
-                            ).pop(); // Close this dialog
-                            _updateSpotStatus(spot.dbId, selectedStatus);
-                          }
+                            selectedStatusForDialog, // This will be updated by setDialogState
+                        onChanged: (SpotStatus? value) {
+                          setDialogState(() {
+                            // Update dialog's local state for radio button
+                            selectedStatusForDialog = value;
+                          });
                         },
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
                       ),
-                      onTap: () {
-                        // Make the whole ListTile tappable
-                        Navigator.of(dialogContext).pop();
-                        _updateSpotStatus(spot.dbId, newStatus);
-                      },
                     ),
-                  )
-                  .toList(),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text("Cancel"),
-            ),
-          ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  child: const Text("Cancel"),
+                ),
+                ElevatedButton(
+                  onPressed:
+                      (selectedStatusForDialog != null &&
+                              selectedStatusForDialog != spot.status)
+                          ? () {
+                            Navigator.of(dialogContext).pop();
+                            _updateSpotStatus(
+                              spot.databaseId,
+                              selectedStatusForDialog!,
+                            ); // Use databaseId
+                          }
+                          : null, // Disable if no change or no selection
+                  child: const Text("Update"),
+                ),
+              ],
+            );
+          },
         );
       },
     );
@@ -311,34 +343,52 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // This widget forms the body of a tab in AdminDashboardScreen.
-    // No Scaffold or AppBar if it's embedded.
+    if (widget.cemeteryId == null && !_isLoading) {
+      // Show message if no cemetery ID and not loading
+      return Center(
+        child: Padding(
+          padding: AppStyles.pagePadding,
+          child: Text(
+            _errorMessage ?? "Please select a cemetery to manage spots.",
+            style: AppStyles.titleStyle.copyWith(
+              color: AppColors.secondaryText,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
     return Padding(
-      padding: AppStyles.pagePadding.copyWith(top: 8.0),
+      padding: AppStyles.pagePadding.copyWith(
+        top: 8.0,
+        bottom: 0,
+      ), // Adjust bottom padding if FAB overlaps
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Filter Dropdown for Spot Status
-          DropdownButtonFormField<SpotStatus>(
-            // Changed type to SpotStatus?
+          DropdownButtonFormField<SpotStatus?>(
+            // Allow SpotStatus? for 'All'
             decoration: InputDecoration(
-              labelText: 'Filter by Spot Status',
+              labelText: 'Filter by Status',
               border: OutlineInputBorder(
                 borderRadius: AppStyles.buttonBorderRadius,
               ),
               isDense: true,
+              filled: true,
+              fillColor: AppColors.cardBackground,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 12,
                 vertical: 14,
               ),
             ),
             value: _filterStatus,
-            hint: const Text('All Spot Statuses'),
+            hint: const Text('All Statuses'),
             items:
                 _statusFilterOptions.map((filter) {
-                  return DropdownMenuItem<SpotStatus>(
-                    value:
-                        filter['value'] as SpotStatus?, // Cast to SpotStatus?
+                  return DropdownMenuItem<SpotStatus?>(
+                    // Allow SpotStatus?
+                    value: filter['value'] as SpotStatus?,
                     child: Text(
                       filter['display'] as String,
                       style: AppStyles.bodyText1,
@@ -346,20 +396,19 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
                   );
                 }).toList(),
             onChanged: (SpotStatus? newValue) {
-              setState(
-                () => _filterStatus = newValue,
-              ); // newValue can be null for 'All'
+              setState(() => _filterStatus = newValue);
               _fetchCemeterySpots();
             },
           ),
           const SizedBox(height: 12),
-
           Expanded(
             child:
                 _isLoading
                     ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.appBar),
-                    )
+                      child: CircularProgressIndicator(
+                        color: AppColors.activeTab,
+                      ),
+                    ) // Use activeTab color
                     : _errorMessage != null
                     ? Center(
                       child: Padding(
@@ -377,24 +426,29 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
                     ? Center(
                       child: Text(
                         _filterStatus == null
-                            ? 'No spots found for ${widget.cemeteryName ?? "the selected cemetery"}.'
-                            : 'No spots found with status "${_filterStatus!.name.capitalizeFirst()}" for ${widget.cemeteryName ?? "the selected cemetery"}.',
-                        style: AppStyles.subtitleText,
+                            ? 'No spots found for ${widget.cemeteryName ?? "this cemetery"}.'
+                            : 'No spots found with status "${_filterStatus!.displayName}" for ${widget.cemeteryName ?? "this cemetery"}.',
+                        style: AppStyles.subtitleText.copyWith(
+                          color: AppColors.secondaryText,
+                        ), // Ensure subtitleText is defined
                         textAlign: TextAlign.center,
                       ),
                     )
                     : GridView.builder(
-                      padding: const EdgeInsets.only(top: 8.0),
+                      padding: const EdgeInsets.only(
+                        top: 8.0,
+                        bottom: 70,
+                      ), // Add bottom padding for FAB
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount:
                             MediaQuery.of(context).size.width > 700
-                                ? 8
+                                ? 6 // Adjusted cross axis count
                                 : (MediaQuery.of(context).size.width > 500
-                                    ? 6
-                                    : 4),
-                        childAspectRatio: 1.2, // Make items a bit taller
-                        mainAxisSpacing: 6,
-                        crossAxisSpacing: 6,
+                                    ? 4
+                                    : 3),
+                        childAspectRatio: 1.1, // Adjusted aspect ratio
+                        mainAxisSpacing: 8,
+                        crossAxisSpacing: 8,
                       ),
                       itemCount: _spots.length,
                       itemBuilder: (context, index) {
@@ -404,42 +458,49 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
                         return GestureDetector(
                           onTap: () => _showSpotActionsDialog(spot),
                           child: Card(
-                            elevation: 0.5,
+                            elevation: 1.0,
                             color: spotColor,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(6),
+                              borderRadius: BorderRadius.circular(8),
                             ),
                             child: Tooltip(
                               message:
-                                  "ID: ${spot.spotIdentifier}\nStatus: ${spot.status.name.capitalizeFirst()}\nType: ${spot.plotType ?? 'N/A'}",
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Text(
-                                    spot.spotIdentifier,
-                                    style: TextStyle(
-                                      color: textColor,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
+                                  "ID: ${spot.spotIdentifier}\nStatus: ${spot.status.displayName}\nType: ${spot.plotType ?? 'N/A'}\nSection: ${spot.sectionName ?? 'N/A'}",
+                              child: Padding(
+                                // Added padding inside card
+                                padding: const EdgeInsets.all(4.0),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      spot.spotIdentifier,
+                                      style: TextStyle(
+                                        color: textColor,
+                                        fontSize: 11, // Adjusted font
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  Text(
-                                    spot.status.name
-                                            .capitalizeFirst()
-                                            .substring(
-                                              0,
-                                              min(spot.status.name.length, 4),
-                                            ) +
-                                        (spot.status.name.length > 4
-                                            ? "."
-                                            : ""),
-                                    style: TextStyle(
-                                      color: textColor.withOpacity(0.8),
-                                      fontSize: 8,
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      spot.status.displayName.length > 10
+                                          ? spot.status.displayName.substring(
+                                                0,
+                                                8,
+                                              ) +
+                                              "..."
+                                          : spot.status.displayName,
+                                      style: TextStyle(
+                                        color: textColor.withOpacity(0.9),
+                                        fontSize: 9, // Adjusted font
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      overflow: TextOverflow.ellipsis,
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
                             ),
                           ),
@@ -450,13 +511,5 @@ class _ManageSpotsAdminScreenState extends State<ManageSpotsAdminScreen> {
         ],
       ),
     );
-  }
-}
-
-// Helper from previous response (ensure it's accessible or defined in a utility file)
-extension StringExtension on String {
-  String capitalizeFirst() {
-    if (isEmpty) return this;
-    return "${this[0].toUpperCase()}${substring(1)}"; // Simple capitalize
   }
 }
