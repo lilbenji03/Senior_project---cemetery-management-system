@@ -1,8 +1,10 @@
-import 'dart:io'; // For File type if you implement image picking
+// lib/screens/reporting_page.dart
 import 'package:flutter/material.dart';
-// import 'package:image_picker/image_picker.dart'; // UNCOMMENT when you add image_picker
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/cemetery_model.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
+import '../models/report_model.dart';
 
 class ReportingPage extends StatefulWidget {
   const ReportingPage({super.key});
@@ -13,325 +15,282 @@ class ReportingPage extends StatefulWidget {
 
 class _ReportingPageState extends State<ReportingPage> {
   final _formKey = GlobalKey<FormState>();
-  String? _selectedReportType;
+  ReportType? _selectedReportType;
   final TextEditingController _detailsController = TextEditingController();
-  File? _pickedImageFile; // To store the picked image file
+  // --- REMOVED: _spaceIdentifierController is no longer needed ---
+
   bool _isSubmitting = false;
 
-  final List<String> _reportTypes = [
-    'Maintenance Request', // More descriptive
-    'Vandalism / Damage',
-    'Safety Concern',
-    'General Complaint',
-    'Suggestion / Feedback',
-    'Other Issue',
-  ];
+  // State for cemetery selection
+  List<Cemetery> _cemeteries = [];
+  Cemetery? _selectedCemetery;
+  bool _isLoadingCemeteries = true;
 
-  // UNCOMMENT and implement when using image_picker
-  // Future<void> _pickImage() async {
-  //   final ImagePicker picker = ImagePicker();
-  //   try {
-  //     final XFile? image = await picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
-  //     if (image != null) {
-  //       setState(() {
-  //         _pickedImageFile = File(image.path);
-  //       });
-  //     }
-  //   } catch (e) {
-  //     if (mounted) {
-  //       ScaffoldMessenger.of(context).showSnackBar(
-  //         SnackBar(content: Text('Error picking image: $e')),
-  //       );
-  //     }
-  //   }
-  // }
+  final List<ReportType> _userReportTypes =
+      ReportType.values.where((type) => type != ReportType.unknown).toList();
 
-  void _removeImage() {
-    setState(() {
-      _pickedImageFile = null;
-    });
-  }
-
-  Future<void> _submitReport() async {
-    if (_formKey.currentState!.validate()) {
-      setState(() => _isSubmitting = true);
-
-      // Simulate submission delay
-      await Future.delayed(const Duration(seconds: 2));
-
-      // TODO: Implement actual report submission logic here
-      // String reportType = _selectedReportType!;
-      // String details = _detailsController.text;
-      // File? imageFile = _pickedImageFile;
-      // Send this data to your backend or service.
-
-      setState(() => _isSubmitting = false);
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (BuildContext context) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: AppStyles.cardBorderRadius,
-              ),
-              title: const Row(
-                children: [
-                  Icon(
-                    Icons.check_circle_outline,
-                    color: AppColors.spotsAvailable,
-                    size: 28,
-                  ),
-                  SizedBox(width: 10),
-                  Text('Report Submitted'),
-                ],
-              ),
-              content: const Text(
-                'Thank you for your report. We will review it shortly.',
-              ),
-              actions: <Widget>[
-                TextButton(
-                  child: const Text(
-                    'OK',
-                    style: TextStyle(color: AppColors.appBar),
-                  ),
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                ),
-              ],
-            );
-          },
-        );
-        // Reset form
-        _formKey.currentState!.reset();
-        _detailsController.clear();
-        setState(() {
-          _selectedReportType = null;
-          _pickedImageFile = null;
-        });
-      }
-    }
+  @override
+  void initState() {
+    super.initState();
+    _fetchCemeteries();
   }
 
   @override
   void dispose() {
     _detailsController.dispose();
+    // --- REMOVED: No need to dispose _spaceIdentifierController ---
     super.dispose();
+  }
+
+  // Fetches all cemeteries for the mandatory dropdown
+  Future<void> _fetchCemeteries() async {
+    try {
+      final List<dynamic> data = await Supabase.instance.client
+          .from('cemeteries')
+          .select('id, name')
+          .order('name', ascending: true);
+
+      if (mounted) {
+        setState(() {
+          _cemeteries = data.map((e) => Cemetery.fromJson(e)).toList();
+          _isLoadingCemeteries = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoadingCemeteries = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Could not load cemeteries.'),
+              backgroundColor: AppColors.errorColor),
+        );
+      }
+    }
+  }
+
+  Future<void> _submitReport() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+    setState(() => _isSubmitting = true);
+
+    try {
+      // The validator already ensures _selectedCemetery is not null.
+      final newReport = Report(
+        id: '',
+        createdAt: DateTime.now(),
+        userId: Supabase.instance.client.auth.currentUser?.id,
+        cemeteryId: _selectedCemetery!.id,
+        // --- REMOVED: spaceIdentifier is no longer part of the report from this page ---
+        type: _selectedReportType!,
+        description: _detailsController.text.trim(),
+        status: ReportStatus.submitted,
+      );
+
+      await Supabase.instance.client
+          .from('reports')
+          .insert(newReport.toJsonForCreate());
+
+      if (mounted) {
+        // Show success dialog and then pop the screen
+        await showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                  borderRadius: AppStyles.cardBorderRadius),
+              title: Row(children: [
+                const Icon(Icons.check_circle_outline_rounded,
+                    color: AppColors.statusApproved, size: 28),
+                const SizedBox(width: 12),
+                Text('Report Submitted', style: AppStyles.cardTitleStyle),
+              ]),
+              content: const Text(
+                  'Thank you for your feedback. Our team will review your report shortly.'),
+              actions: <Widget>[
+                TextButton(
+                  child: Text('OK',
+                      style: TextStyle(
+                          color: AppColors.appBar,
+                          fontWeight: FontWeight.bold)),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ],
+            );
+          },
+        );
+        if (mounted) Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        final errorMessage = e is PostgrestException
+            ? 'Database Error: ${e.message}'
+            : 'An unexpected error occurred. Please try again.';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(errorMessage),
+              backgroundColor: AppColors.errorColor),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
+  InputDecoration _customInputDecoration(String label, {IconData? prefixIcon}) {
+    return InputDecoration(
+      labelText: label,
+      labelStyle: AppStyles.bodyText2,
+      prefixIcon: prefixIcon != null
+          ? Icon(prefixIcon, color: AppColors.secondaryText.withOpacity(0.7))
+          : null,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide:
+              BorderSide(color: AppColors.secondaryText.withOpacity(0.2))),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide:
+              BorderSide(color: AppColors.secondaryText.withOpacity(0.2))),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: const BorderSide(color: AppColors.appBar, width: 1.5)),
+      errorBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide:
+              const BorderSide(color: AppColors.errorColor, width: 1.0)),
+      focusedErrorBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide:
+              const BorderSide(color: AppColors.errorColor, width: 1.5)),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // No Scaffold or AppBar here, as it's part of MainScreen
-    return Container(
-      color: AppColors.background,
-      child: SingleChildScrollView(
-        padding: AppStyles.pagePadding.copyWith(
-          top: 20.0,
-          bottom: 20.0,
-        ), // Added top padding
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Text(
-                'Report an Issue or Suggestion',
-                style: AppStyles.cardTitleStyle.copyWith(
-                  fontSize: 20,
-                  color: AppColors.primaryText,
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Text('File a Report',
+            style: AppStyles.appBarTitleStyle.copyWith(fontSize: 22)),
+        backgroundColor: AppColors.appBar,
+        foregroundColor: AppColors.appBarTitle,
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: AppStyles.pagePadding,
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Text(
+                  'Report an Issue or Suggestion',
+                  style: AppStyles.titleStyle,
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8.0),
-              Text(
-                'Please provide details about any maintenance needs, complaints, or suggestions you have regarding the cemetery facilities or services.',
-                style: AppStyles.bodyText2.copyWith(
-                  color: AppColors.secondaryText,
+                const SizedBox(height: 8.0),
+                Text(
+                  'Please select the cemetery and provide details about your concern.',
+                  style: AppStyles.bodyText2,
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24.0),
+                const Divider(height: 32),
 
-              // Section for Report Type
-              _buildSectionContainer(
-                child: DropdownButtonFormField<String>(
-                  decoration: const InputDecoration(
-                    labelText: 'Type of Report',
-                    prefixIcon: Icon(Icons.category_outlined),
-                    // Using global theme for border, fill, etc.
-                  ),
+                // --- MANDATORY Cemetery Dropdown ---
+                DropdownButtonFormField<Cemetery>(
+                  decoration: _customInputDecoration('Select Cemetery *',
+                      prefixIcon: Icons.location_city_rounded),
+                  value: _selectedCemetery,
+                  hint: _isLoadingCemeteries
+                      ? const Text('Loading cemeteries...')
+                      : const Text('Choose a cemetery'),
+                  items: _cemeteries
+                      .map<DropdownMenuItem<Cemetery>>((Cemetery cemetery) {
+                    return DropdownMenuItem<Cemetery>(
+                        value: cemetery,
+                        child: Text(cemetery.name, style: AppStyles.bodyText1));
+                  }).toList(),
+                  onChanged: (Cemetery? newValue) {
+                    setState(() => _selectedCemetery = newValue);
+                  },
+                  validator: (value) =>
+                      value == null ? 'Please select a cemetery' : null,
+                ),
+                const SizedBox(height: 16.0),
+
+                // --- REMOVED: The optional Space Identifier TextFormField is gone ---
+
+                // --- MANDATORY Report Type Dropdown ---
+                DropdownButtonFormField<ReportType>(
+                  decoration: _customInputDecoration('Type of Report *',
+                      prefixIcon: Icons.category_outlined),
                   value: _selectedReportType,
-                  hint: const Text('Select report category'),
-                  icon: const Icon(
-                    Icons.arrow_drop_down,
-                    color: AppColors.appBar,
-                  ),
-                  items:
-                      _reportTypes.map<DropdownMenuItem<String>>((
-                        String value,
-                      ) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(value, style: AppStyles.bodyText1),
-                        );
-                      }).toList(),
-                  onChanged:
-                      (String? newValue) =>
-                          setState(() => _selectedReportType = newValue),
-                  validator:
-                      (value) =>
-                          value == null ? 'Please select a report type' : null,
-                  style: AppStyles.bodyText1, // For selected item style
+                  hint: const Text('Select a category...'),
+                  items: _userReportTypes
+                      .map<DropdownMenuItem<ReportType>>((ReportType type) {
+                    return DropdownMenuItem<ReportType>(
+                        value: type,
+                        child: Row(
+                          children: [
+                            Icon(type.icon,
+                                size: 20, color: AppColors.secondaryText),
+                            const SizedBox(width: 12),
+                            Text(type.displayName, style: AppStyles.bodyText1),
+                          ],
+                        ));
+                  }).toList(),
+                  onChanged: (ReportType? newValue) {
+                    setState(() => _selectedReportType = newValue);
+                  },
+                  validator: (value) =>
+                      value == null ? 'Please select a report type' : null,
                 ),
-              ),
-              const SizedBox(height: 16.0),
+                const SizedBox(height: 16.0),
 
-              // Section for Details
-              _buildSectionContainer(
-                child: TextFormField(
-                  controller: _detailsController,
-                  decoration: const InputDecoration(
-                    labelText: 'Detailed Description',
-                    hintText: 'Please provide as much detail as possible...',
-                    prefixIcon: Icon(Icons.description_outlined),
-                    alignLabelWithHint: true, // Good for multiline
+                Expanded(
+                  child: TextFormField(
+                    controller: _detailsController,
+                    decoration: _customInputDecoration('Detailed Description *')
+                        .copyWith(
+                      hintText: 'Please provide as much detail as possible...',
+                      alignLabelWithHint: true,
+                    ),
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    validator: (value) =>
+                        (value == null || value.trim().length < 20)
+                            ? 'Please provide at least 20 characters.'
+                            : null,
                   ),
-                  maxLines: 6,
-                  minLines: 4,
-                  style: AppStyles.bodyText1,
-                  validator:
-                      (value) =>
-                          (value == null ||
-                                  value.isEmpty ||
-                                  value.trim().length < 10)
-                              ? 'Please enter at least 10 characters for details'
-                              : null,
                 ),
-              ),
-              const SizedBox(height: 16.0),
+                const SizedBox(height: 24.0),
 
-              // Section for Attachment
-              _buildSectionContainer(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Attach Photo (Optional)',
-                      style: AppStyles.bodyText1.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 8.0),
-                    GestureDetector(
-                      // onTap: _pickImage, // UNCOMMENT when image_picker is integrated
-                      onTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Image picking not yet implemented.'),
-                          ),
-                        );
-                      },
-                      child: Container(
-                        height: 120,
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: AppColors.cardBackground,
-                          borderRadius: AppStyles.cardBorderRadius,
-                          border: Border.all(color: Colors.grey.shade300),
-                        ),
-                        child:
-                            _pickedImageFile != null
-                                ? Stack(
-                                  alignment: Alignment.topRight,
-                                  children: [
-                                    ClipRRect(
-                                      // Ensure image is also rounded if container is
-                                      borderRadius: AppStyles.cardBorderRadius,
-                                      child: Image.file(
-                                        _pickedImageFile!,
-                                        fit: BoxFit.cover,
-                                        width: double.infinity,
-                                        height: double.infinity,
-                                      ),
-                                    ),
-                                    Container(
-                                      margin: const EdgeInsets.all(4),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black.withOpacity(0.5),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: IconButton(
-                                        icon: const Icon(
-                                          Icons.close,
-                                          color: Colors.white,
-                                          size: 18,
-                                        ),
-                                        onPressed: _removeImage,
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                      ),
-                                    ),
-                                  ],
-                                )
-                                : Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(
-                                      Icons.add_a_photo_outlined,
-                                      color: AppColors.appBar,
-                                      size: 36,
-                                    ),
-                                    const SizedBox(height: 8.0),
-                                    Text(
-                                      'Tap to add a photo',
-                                      style: AppStyles.bodyText2.copyWith(
-                                        color: AppColors.secondaryText,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 32.0),
-
-              // Submit Button
-              _isSubmitting
-                  ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.appBar),
-                  )
-                  : ElevatedButton.icon(
-                    icon: const Icon(Icons.send_outlined, size: 20),
-                    label: const Text('Submit Report'),
-                    style: ElevatedButton.styleFrom(
-                      minimumSize: const Size(
-                        double.infinity,
-                        50,
-                      ), // Standard button height
-                      // textStyle will come from global theme
-                    ),
-                    onPressed: _submitReport,
+                ElevatedButton.icon(
+                  icon: const Icon(Icons.send_rounded, size: 20),
+                  label:
+                      Text(_isSubmitting ? 'Submitting...' : 'Submit Report'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.buttonBackground,
+                    foregroundColor: AppColors.buttonText,
+                    minimumSize: const Size(double.infinity, 50),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: AppStyles.buttonBorderRadius),
+                    textStyle: AppStyles.buttonTextStyle,
                   ),
-            ],
+                  onPressed: _isSubmitting ? null : _submitReport,
+                ),
+              ],
+            ),
           ),
         ),
       ),
-    );
-  }
-
-  // Helper to wrap sections in a Card-like container for visual structure
-  Widget _buildSectionContainer({required Widget child}) {
-    return Container(
-      padding: const EdgeInsets.all(16.0),
-      decoration: BoxDecoration(
-        color: AppColors.cardBackground,
-        borderRadius: AppStyles.cardBorderRadius,
-        boxShadow: AppStyles.cardBoxShadow,
-      ),
-      child: child,
     );
   }
 }

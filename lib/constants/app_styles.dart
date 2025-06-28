@@ -21,17 +21,11 @@ class AppStyles {
     fontSize: 18,
   );
 
-  // THIS IS THE STYLE THAT WAS MISSING AND CAUSING THE ERROR
-  // Define it based on your needs. For the admin dashboard,
-  // it was used as a base for text like "Dashboard Overview" and card titles.
   static final TextStyle titleStyle = TextStyle(
-    // Changed from 'var' to 'final TextStyle'
-    color:
-        AppColors
-            .primaryText, // Or AppColors.cardTitle, depending on default usage
+    color: AppColors.primaryText,
     fontFamily: fontFamily,
-    fontWeight: FontWeight.w600, // Common for titles
-    fontSize: 20, // A good default title size
+    fontWeight: FontWeight.w600,
+    fontSize: 20,
   );
 
   static const TextStyle bodyText1 = TextStyle(
@@ -48,7 +42,6 @@ class AppStyles {
   );
 
   static final TextStyle bodyText2 = TextStyle(
-    // Keep as 'final' not 'const' if using .withOpacity
     color: AppColors.secondaryText,
     fontFamily: fontFamily,
     fontSize: 14,
@@ -56,7 +49,6 @@ class AppStyles {
   );
 
   static final TextStyle caption = TextStyle(
-    // Keep as 'final' not 'const' if using .withOpacity
     color: AppColors.secondaryText.withOpacity(0.9),
     fontFamily: fontFamily,
     fontSize: 12,
@@ -76,19 +68,19 @@ class AppStyles {
     fontWeight: FontWeight.w600,
   );
 
+  // Consider renaming to spacesAvailableStyle for consistency with recent changes
   static const TextStyle spotsAvailableStyle = TextStyle(
-    color: AppColors.spotsAvailable,
+    color: AppColors
+        .spotsAvailable, // This color might also be renamed (e.g., AppColors.availabilityPositive)
     fontFamily: fontFamily,
     fontSize: 14,
     fontWeight: FontWeight.w500,
   );
 
-  // DEFINE subtitleText if you plan to use it
   static final TextStyle subtitleText = TextStyle(
-    // Changed from 'var' to 'final TextStyle'
     color: AppColors.secondaryText,
     fontFamily: fontFamily,
-    fontSize: 16, // Example size, adjust as needed
+    fontSize: 16,
     fontWeight: FontWeight.normal,
   );
 
@@ -107,11 +99,16 @@ class AppStyles {
   static final BorderRadius buttonBorderRadius = BorderRadius.circular(8.0);
 
   // --- Paddings ---
-  static const EdgeInsets pagePadding = EdgeInsets.all(16.0);
+  // static const EdgeInsets pagePadding = EdgeInsets.all(16.0); // REMOVED DUPLICATE
   static const EdgeInsets cardPadding = EdgeInsets.all(16.0);
 
   // --- Elevations ---
   static const double elevationLow = 2.0;
   static const double elevationMedium = 4.0;
   static const double elevationHigh = 8.0;
+
+  // Define pagePaddingVal first, then use it for pagePadding
+  static const double pagePaddingVal = 16.0;
+  static const EdgeInsets pagePadding =
+      EdgeInsets.all(pagePaddingVal); // CORRECTED: Kept this version
 }

@@ -1,271 +1,158 @@
 // lib/screens/services_page.dart
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:url_launcher/url_launcher.dart'; // For making phone calls
+import '../models/grave_care_service_model.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
-import '../models/grave_care_service_model.dart';
 
-class ServicesPage extends StatefulWidget {
+class ServicesPage extends StatelessWidget {
   const ServicesPage({super.key});
 
-  @override
-  State<ServicesPage> createState() => _ServicesPageState();
-}
-
-class _ServicesPageState extends State<ServicesPage> {
-  final List<GraveCareService> _services = sampleGraveCareServices;
-
-  Future<void> _launchURL(String? urlString) async {
-    // ... (your existing _launchURL method - no changes needed here)
-    if (urlString == null || urlString.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('No link available.')));
+  // Helper function to launch the phone dialer
+  Future<void> _launchPhoneCall(
+      String? phoneNumber, BuildContext context) async {
+    if (phoneNumber == null || phoneNumber.isEmpty) {
+      // This case is handled by disabling the button, but it's good practice to keep it.
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No contact number available.')),
+      );
       return;
     }
-    final Uri url = Uri.parse(urlString);
-    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not launch $urlString')));
-    }
-  }
 
-  void _requestServiceInquiry(GraveCareService service) {
-    // ... (your existing _requestServiceInquiry method - no changes needed here)
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        final TextEditingController nameController = TextEditingController();
-        final TextEditingController phoneController = TextEditingController();
-        final TextEditingController graveIdController = TextEditingController();
-        final GlobalKey<FormState> formKey = GlobalKey<FormState>();
-        return AlertDialog(
-          title: Text('Inquire about ${service.name}'),
-          content: SingleChildScrollView(
-            child: Form(
-              key: formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    service.description,
-                    style: const TextStyle(fontSize: 14),
-                  ),
-                  const SizedBox(height: 10),
-                  Text(
-                    'Estimated Cost: ${service.estimatedCostRange}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: nameController,
-                    decoration: InputDecoration(
-                      labelText: 'Your Name',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: AppColors.cardBackground.withOpacity(0.5),
-                    ),
-                    validator:
-                        (value) =>
-                            (value == null || value.isEmpty)
-                                ? 'Please enter your name'
-                                : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: phoneController,
-                    decoration: InputDecoration(
-                      labelText: 'Your Phone Number',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: AppColors.cardBackground.withOpacity(0.5),
-                    ),
-                    keyboardType: TextInputType.phone,
-                    validator:
-                        (value) =>
-                            (value == null || value.isEmpty)
-                                ? 'Please enter your phone number'
-                                : null,
-                  ),
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: graveIdController,
-                    decoration: InputDecoration(
-                      labelText:
-                          'Grave Identifier (e.g., Deceased Name or Plot No.)',
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      filled: true,
-                      fillColor: AppColors.cardBackground.withOpacity(0.5),
-                    ),
-                    validator:
-                        (value) =>
-                            (value == null || value.isEmpty)
-                                ? 'Please provide a grave identifier'
-                                : null,
-                  ),
-                ],
-              ),
-            ),
+    final Uri phoneUri = Uri(scheme: 'tel', path: phoneNumber);
+    if (await canLaunchUrl(phoneUri)) {
+      await launchUrl(phoneUri);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Could not place a call to $phoneNumber'),
+            backgroundColor: AppColors.errorColor,
           ),
-          actions: <Widget>[
-            TextButton(
-              child: const Text('Cancel'),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.appBar,
-                foregroundColor: AppColors.buttonText,
-              ),
-              child: const Text('Submit Inquiry'),
-              onPressed: () {
-                if (formKey.currentState!.validate()) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text(
-                        'Inquiry for ${service.name} submitted for grave: ${graveIdController.text}. We will contact ${nameController.text} at ${phoneController.text}. (Simulated)',
-                      ),
-                    ),
-                  );
-                  Navigator.of(context).pop();
-                }
-              },
-            ),
-          ],
         );
-      },
-    );
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // REMOVED Scaffold and AppBar from here
     return Container(
-      // Or directly the ListView
       color: AppColors.background,
       child: ListView.builder(
-        padding: AppStyles.pagePadding,
-        itemCount: _services.length,
+        padding: AppStyles.pagePadding.copyWith(top: 16, bottom: 24),
+        itemCount: sampleGraveCareServices.length,
         itemBuilder: (context, index) {
-          final service = _services[index];
-          return Card(
-            // ... (rest of your Card and its content - no changes needed inside the Card)
-            elevation: AppStyles.elevationMedium,
-            margin: const EdgeInsets.symmetric(vertical: 8.0),
-            shape: RoundedRectangleBorder(
-              borderRadius: AppStyles.cardBorderRadius,
-            ),
-            child: Padding(
-              padding: AppStyles.cardPadding,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(service.name, style: AppStyles.cardTitleStyle),
-                  const SizedBox(height: 8),
-                  Text(
-                    service.description,
-                    style: AppStyles.bodyText1.copyWith(fontSize: 14),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Est. Cost: ${service.estimatedCostRange}',
-                    style: AppStyles.spotsAvailableStyle,
-                  ),
-                  if (service.contactPhoneNumber != null &&
-                      service.contactPhoneNumber!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 8.0),
-                      child: Row(
-                        children: [
-                          Icon(Icons.phone, color: AppColors.appBar, size: 18),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: InkWell(
-                              onTap:
-                                  () => _launchURL(
-                                    'tel:${service.contactPhoneNumber}',
-                                  ),
-                              child: Text(
-                                service.contactPhoneNumber!,
-                                style: AppStyles.bodyText1.copyWith(
-                                  fontSize: 14,
-                                  color: AppColors.appBar,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
+          final service = sampleGraveCareServices[index];
+          return _buildServiceCard(service, context);
+        },
+      ),
+    );
+  }
+
+  Widget _buildServiceCard(GraveCareService service, BuildContext context) {
+    bool canCall = service.contactPhoneNumber != null &&
+        service.contactPhoneNumber!.isNotEmpty;
+
+    return Card(
+      elevation: AppStyles.elevationLow,
+      margin: const EdgeInsets.only(bottom: 16.0),
+      shape: RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+      color: AppColors.cardBackground,
+      shadowColor: Colors.black.withOpacity(0.1),
+      child: Padding(
+        padding: AppStyles.cardPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // --- Header: Icon and Name ---
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(service.icon, size: 36, color: AppColors.appBar),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (service.moreInfoLink != null &&
-                          service.moreInfoLink!.isNotEmpty &&
-                          service.type != GraveCareServiceType.memorialPage)
-                        TextButton.icon(
-                          icon: const Icon(
-                            Icons.info_outline,
-                            color: AppColors.appBar,
-                            size: 20,
-                          ),
-                          label: const Text(
-                            'More Info',
-                            style: TextStyle(color: AppColors.appBar),
-                          ),
-                          onPressed: () => _launchURL(service.moreInfoLink),
-                        ),
-                      if (service.moreInfoLink != null &&
-                          service.moreInfoLink!.isNotEmpty &&
-                          service.type != GraveCareServiceType.memorialPage)
-                        const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.buttonBackground,
-                            foregroundColor: AppColors.buttonText,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                          ),
-                          onPressed: () => _requestServiceInquiry(service),
+                      Text(service.name, style: AppStyles.cardTitleStyle),
+                      if (service.providerExample != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
                           child: Text(
-                            service.type == GraveCareServiceType.construction ||
-                                    service.type ==
-                                        GraveCareServiceType.memorialPage ||
-                                    service.estimatedCostRange
-                                        .toLowerCase()
-                                        .contains('varies')
-                                ? 'Request Quote/Inquire'
-                                : 'Request Service',
-                            textAlign: TextAlign.center,
-                            style: AppStyles.button,
+                            'Provider: ${service.providerExample}',
+                            style: AppStyles.caption
+                                .copyWith(fontStyle: FontStyle.italic),
                           ),
                         ),
-                      ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24, thickness: 0.5),
+
+            // --- Description ---
+            Text(service.description,
+                style: AppStyles.bodyText1.copyWith(height: 1.4)),
+            const SizedBox(height: 16),
+
+            // --- Cost Information ---
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.background,
+                borderRadius: AppStyles.buttonBorderRadius,
+                border:
+                    Border.all(color: AppColors.secondaryText.withOpacity(0.1)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.paid_outlined,
+                      color: AppColors.spotsAvailable, size: 20),
+                  const SizedBox(width: 8),
+                  Text('Est. Cost: ',
+                      style: AppStyles.bodyText1
+                          .copyWith(fontWeight: FontWeight.w500)),
+                  Expanded(
+                    child: Text(
+                      service.estimatedCostRange,
+                      style: AppStyles.bodyText1.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primaryText),
+                      textAlign: TextAlign.end,
+                    ),
                   ),
                 ],
               ),
             ),
-          );
-        },
+            const SizedBox(height: 20),
+
+            // --- Simplified "Call Provider" Action Button ---
+            Align(
+              alignment: Alignment.centerRight,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.phone_forwarded_rounded, size: 18),
+                label: const Text('Contact Provider'),
+                // The button is disabled if there's no phone number
+                onPressed: canCall
+                    ? () =>
+                        _launchPhoneCall(service.contactPhoneNumber, context)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.buttonBackground,
+                  foregroundColor: AppColors.buttonText,
+                  disabledBackgroundColor:
+                      AppColors.secondaryText.withOpacity(0.5),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: AppStyles.buttonBorderRadius),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  textStyle: AppStyles.buttonTextStyle,
+                ),
+              ),
+            )
+          ],
+        ),
       ),
     );
   }

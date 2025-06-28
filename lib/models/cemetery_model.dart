@@ -1,9 +1,10 @@
 // lib/models/cemetery_model.dart
+
 class Cemetery {
   final String id;
   final String name;
-  final int availableSpots;
-  final int totalSpots;
+  final int availableSpaces; // Changed from availableSpots
+  final int totalSpaces; // Changed from totalSpots
   final String imageUrl;
   final String? locationDescription;
   final double? latitude;
@@ -13,8 +14,8 @@ class Cemetery {
   Cemetery({
     required this.id,
     required this.name,
-    required this.availableSpots,
-    required this.totalSpots,
+    required this.availableSpaces, // Changed from availableSpots
+    required this.totalSpaces, // Changed from totalSpots
     required this.imageUrl,
     this.locationDescription,
     this.latitude,
@@ -25,8 +26,10 @@ class Cemetery {
     return Cemetery(
       id: json['id'] as String,
       name: json['name'] as String? ?? 'Unknown Cemetery',
-      availableSpots: json['available_spots'] as int? ?? 0,
-      totalSpots: json['total_spots'] as int? ?? 0,
+      availableSpaces:
+          json['available_spaces'] as int? ?? 0, // Changed from available_spots
+      totalSpaces:
+          json['total_spaces'] as int? ?? 0, // Changed from total_spots
       // For imageUrl, if storing path from Supabase Storage:
       // imageUrl: json['image_url'] != null ? supabase.storage.from('your_bucket_name').getPublicUrl(json['image_url']).data : 'https://via.placeholder.com/400x200.png?text=No+Image',
       // For now, assuming it's a direct URL or you handle storage URL generation elsewhere
@@ -42,4 +45,3 @@ class Cemetery {
 }
 
 // Remove 'sampleCemeteries' list from here if you're fetching from Supabase
-// List<Cemetery> sampleCemeteries = [ ... ];

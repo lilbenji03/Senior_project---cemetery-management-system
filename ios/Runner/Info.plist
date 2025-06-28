@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Cmc</string>
+	<string>Cmc</string> <!-- Consider a more user-friendly name if "Cmc" is an internal codename -->
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>cmc</string>
+	<string>cmc</string> <!-- This often matches CFBundleDisplayName or is the project name -->
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -31,8 +31,9 @@
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
+		<!-- If you don't support landscape on phone, remove these -->
+		<!-- <string>UIInterfaceOrientationLandscapeLeft</string> -->
+		<!-- <string>UIInterfaceOrientationLandscapeRight</string> -->
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
@@ -45,5 +46,40 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+
+	<!-- ADDED PERMISSIONS FOR IMAGE PICKER -->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>This app needs access to your photo library so you can select images to attach to your reports or update your profile.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>This app needs access to your camera so you can take photos to attach to your reports or update your profile.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>This app needs access to your microphone if you choose to record a video with sound (e.g., for reports). This is optional.</string>
+	<!-- END OF ADDED PERMISSIONS FOR IMAGE PICKER -->
+
+	<!-- OPTIONAL: Location Permission (Add if your app uses location services) -->
+	<!--
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>This app needs access to your location to help find nearby cemeteries or provide directions.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>This app needs background location access for [explain your feature, e.g., location-based notifications].</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+    <string>This app needs background location access for [explain your feature].</string>
+	-->
+
+	<!-- OPTIONAL: If you use Supabase deep linking for magic links or OAuth -->
+    <!--
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeRole</key>
+            <string>Editor</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>your.app.bundle.id</string> <!-- Replace with your actual bundle ID or custom scheme -->
+            </array>
+        </dict>
+    </array>
+    -->
+
 </dict>
 </plist>

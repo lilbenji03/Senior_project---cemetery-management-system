@@ -1,12 +1,11 @@
 // lib/screens/cemeteries_list_page.dart
+import 'package:cmc/screens/cemetery_space_list_page.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // Import Supabase
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../widgets/cemetery_card.dart';
 import '../models/cemetery_model.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
-
-final supabase = Supabase.instance.client; // Access global instance
 
 class CemeteriesListPage extends StatefulWidget {
   const CemeteriesListPage({super.key});
@@ -26,27 +25,25 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
   @override
   void initState() {
     super.initState();
-    _fetchCemeteriesFromSupabase(); // Fetch data on init
+    _fetchCemeteriesWithStats();
     _searchController.addListener(_onSearchChanged);
   }
 
-  Future<void> _fetchCemeteriesFromSupabase() async {
+  Future<void> _fetchCemeteriesWithStats() async {
     if (!mounted) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
     try {
-      final List<dynamic> response = await supabase
-          .from('cemeteries')
-          .select() // Select all columns, or specify: 'id, name, available_spots, ...'
-          .order('name', ascending: true); // Example ordering
+      final List<dynamic> response =
+          await Supabase.instance.client.rpc('get_cemeteries_with_stats');
 
       if (mounted) {
         setState(() {
           _allCemeteries =
               response.map((data) => Cemetery.fromJson(data)).toList();
-          _filteredCemeteries = _allCemeteries;
+          _filterCemeteries();
           _isLoading = false;
         });
       }
@@ -70,7 +67,6 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
 
   void _onSearchChanged() {
     _filterCemeteries();
-    if (mounted) setState(() {});
   }
 
   void _filterCemeteries() {
@@ -79,14 +75,11 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
       if (query.isEmpty) {
         _filteredCemeteries = _allCemeteries;
       } else {
-        _filteredCemeteries =
-            _allCemeteries.where((cemetery) {
-              return cemetery.name.toLowerCase().contains(query) ||
-                  (cemetery.locationDescription?.toLowerCase().contains(
-                        query,
-                      ) ??
-                      false);
-            }).toList();
+        _filteredCemeteries = _allCemeteries.where((cemetery) {
+          return cemetery.name.toLowerCase().contains(query) ||
+              (cemetery.locationDescription?.toLowerCase().contains(query) ??
+                  false);
+        }).toList();
       }
     });
   }
@@ -98,67 +91,84 @@ class _CemeteriesListPageState extends State<CemeteriesListPage> {
     _searchController.clear();
   }
 
+  // This is the function that handles navigation and refreshing
+  void _handleBookSpacesTap(Cemetery cemetery) async {
+    final bool? refreshNeeded = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => CemeterySpaceListPage(cemetery: cemetery),
+      ),
+    );
+
+    // If the page we navigated to returns 'true', it means we need to refresh our data.
+    if (refreshNeeded == true && mounted) {
+      print("CemeteriesListPage: Refreshing stats after booking/cancellation.");
+      _fetchCemeteriesWithStats();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppColors.background,
       child: Column(
         children: [
-          // Search Bar (keep your enhanced search bar UI)
+          // Search Bar
+          Padding(
+            padding: AppStyles.pagePadding.copyWith(top: 16.0, bottom: 8.0),
+            child: TextField(
+              controller: _searchController,
+              focusNode: _searchFocusNode,
+              decoration: InputDecoration(
+                hintText: 'Search by cemetery name or location...',
+                prefixIcon:
+                    const Icon(Icons.search, color: AppColors.secondaryText),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear,
+                            color: AppColors.secondaryText),
+                        onPressed: _clearSearch)
+                    : null,
+                filled: true,
+                fillColor: AppColors.cardBackground,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(30),
+                    borderSide: BorderSide.none),
+              ),
+            ),
+          ),
           Expanded(
-            child:
-                _isLoading
-                    ? const Center(
-                      child: CircularProgressIndicator(color: AppColors.appBar),
-                    )
-                    : _errorMessage != null
+            child: _isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.appBar))
+                : _errorMessage != null
                     ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          _errorMessage!,
-                          style: AppStyles.bodyText1.copyWith(
-                            color: AppColors.errorColor,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
-                    : _filteredCemeteries.isEmpty &&
-                        _searchController.text.isNotEmpty
-                    ? Center(/* ... No results for search ... */)
-                    : _allCemeteries
-                        .isEmpty // Check if original list from Supabase is empty
-                    ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Text(
-                          'No cemeteries are currently available.',
-                          style: AppStyles.bodyText2.copyWith(
-                            color: AppColors.secondaryText,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    )
+                        child: Text(_errorMessage!,
+                            style:
+                                const TextStyle(color: AppColors.errorColor)))
                     : RefreshIndicator(
-                      // Add pull to refresh
-                      onRefresh: _fetchCemeteriesFromSupabase,
-                      color: AppColors.appBar,
-                      child: ListView.builder(
-                        padding: AppStyles.pagePadding.copyWith(
-                          top: 0,
-                          left: 8.0,
-                          right: 8.0,
+                        onRefresh: _fetchCemeteriesWithStats,
+                        color: AppColors.appBar,
+                        child: ListView.builder(
+                          padding: AppStyles.pagePadding
+                              .copyWith(top: 0, left: 8.0, right: 8.0),
+                          itemCount: _filteredCemeteries.length,
+                          itemBuilder: (context, index) {
+                            final cemetery = _filteredCemeteries[index];
+                            // =======================================================
+                            // ===         *** THIS IS THE CORRECTED PART ***      ===
+                            // =======================================================
+                            return CemeteryCard(
+                              cemetery: cemetery,
+                              // We are now providing the required 'onBookSpacesPressed' parameter.
+                              // We pass our navigation and refresh logic into the card's button.
+                              onBookSpacesPressed: () =>
+                                  _handleBookSpacesTap(cemetery),
+                            );
+                            // =======================================================
+                          },
                         ),
-                        itemCount: _filteredCemeteries.length,
-                        itemBuilder: (context, index) {
-                          return CemeteryCard(
-                            cemetery: _filteredCemeteries[index],
-                          );
-                        },
                       ),
-                    ),
           ),
         ],
       ),

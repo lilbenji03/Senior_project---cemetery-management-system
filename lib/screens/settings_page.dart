@@ -1,88 +1,183 @@
 // lib/screens/settings_page.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // Import for RPC call
 import 'package:url_launcher/url_launcher.dart';
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
+import '../constants/legal_text.dart';
 import 'profile_page.dart';
-import '../services/auth_service.dart'; // Ensure this path is correct
+import '../services/auth_service.dart';
 
 class SettingsPage extends StatelessWidget {
-  // It's good practice to make StatelessWidget constructors const if all fields are final.
-  // However, since _authService is final but initialized here, we remove 'const' from the constructor.
   SettingsPage({super.key});
 
-  final AuthService _authService = AuthService(); // Instance of AuthService
+  final AuthService _authService = AuthService();
 
-  // CORRECTED AND ROBUST _launchURL METHOD
-  Future<void> _launchURL(BuildContext context, String? urlString) async {
-    // For debugging:
-    // print("Attempting to launch URL: '$urlString'");
-
-    if (urlString == null || urlString.trim().isEmpty) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('URL is not available or is invalid.')),
-        );
-      }
-      return;
-    }
-
-    String effectiveUrlString = urlString.trim();
-
-    // Attempt to prepend a scheme if it looks like a web URL without one
-    if (!effectiveUrlString.startsWith(RegExp(r'[a-zA-Z]+://')) &&
-        (effectiveUrlString.contains('.') ||
-            effectiveUrlString.startsWith('www.'))) {
-      effectiveUrlString = 'https://$effectiveUrlString';
-      // print("Prepended https, new URL: '$effectiveUrlString'");
-    }
-
-    Uri? uri;
-    try {
-      uri = Uri.parse(effectiveUrlString);
-      // A more robust check for web URLs after parsing
-      if ((uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isEmpty) {
-        throw FormatException("Parsed URI has no host: $effectiveUrlString");
-      }
-    } catch (e) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Invalid URL format: $effectiveUrlString')),
-        );
-      }
-      return;
-    }
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        // This specific error might not be reached often if Uri.parse succeeds and canLaunchUrl handles it
-        throw Exception('Cannot launch URL');
-      }
-    } catch (e) {
+  Future<void> _launchURL(BuildContext context, String urlString) async {
+    final Uri url = Uri.parse(urlString);
+    if (!await canLaunchUrl(url)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Could not launch $effectiveUrlString. Please check if a supporting app is installed.',
-            ),
-          ),
+              content: Text('Could not perform this action.'),
+              backgroundColor: AppColors.errorColor),
         );
       }
+    } else {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
     }
   }
 
-  void _logout(BuildContext context) async {
+  void _showLegalDialog(
+      BuildContext context, String title, String markdownContent) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+        title: Text(title, style: AppStyles.cardTitleStyle),
+        content: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.6),
+          child: Scrollbar(
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              child: MarkdownBody(
+                data: markdownContent,
+                styleSheet:
+                    MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                  p: AppStyles.bodyText1,
+                  h2: AppStyles.cardTitleStyle.copyWith(fontSize: 16),
+                ),
+              ),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            child: Text('Close',
+                style: TextStyle(
+                    color: AppColors.appBar, fontWeight: FontWeight.bold)),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // =======================================================================
+  // ===                 *** DELETION LOGIC STARTS HERE ***              ===
+  // =======================================================================
+
+  // Method to handle the entire deletion flow with multiple confirmations
+  void _handleAccountDeletion(BuildContext context) async {
+    final userEmail =
+        Supabase.instance.client.auth.currentUser?.email ?? 'your account';
+
+    // First confirmation dialog
+    final bool? confirmFirst = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account?'),
+        content: const Text(
+            'This action is permanent and cannot be undone. All your data, including reservations and profile information, will be deleted forever.\n\nAre you sure you want to proceed?'),
+        shape: RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.errorColor),
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Yes, Continue'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmFirst != true || !context.mounted) return;
+
+    // Second confirmation: User must type their email to confirm
+    final TextEditingController emailConfirmationController =
+        TextEditingController();
+    final bool? confirmSecond = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Final Confirmation'),
+          content: SingleChildScrollView(
+            // To avoid overflow when keyboard appears
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                    'To confirm permanent deletion, please type your email address below:'),
+                const SizedBox(height: 8),
+                Text(userEmail,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: emailConfirmationController,
+                  decoration: const InputDecoration(labelText: 'Confirm Email'),
+                  keyboardType: TextInputType.emailAddress,
+                ),
+              ],
+            ),
+          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.of(context).pop(false),
+                child: const Text('Cancel')),
+            TextButton(
+              style:
+                  TextButton.styleFrom(foregroundColor: AppColors.errorColor),
+              onPressed: () {
+                if (emailConfirmationController.text.trim().toLowerCase() ==
+                    userEmail.toLowerCase()) {
+                  Navigator.of(context).pop(true);
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text('Email does not match.'),
+                        backgroundColor: AppColors.errorColor),
+                  );
+                }
+              },
+              child: const Text('Delete Permanently'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmSecond != true || !context.mounted) return;
+
+    // If both confirmations passed, execute the deletion
+    _executeAccountDeletion(context);
+  }
+
+  void _executeAccountDeletion(BuildContext context) async {
+    // Show a loading dialog
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+          child: CircularProgressIndicator(color: AppColors.appBar)),
+    );
+
     try {
-      await _authService.signOut();
-      // AuthGate will handle navigation after signOut.
-      // No explicit navigation needed here if AuthGate is correctly set up.
+      await Supabase.instance.client.rpc('delete_user_account');
+      if (context.mounted)
+        Navigator.of(context, rootNavigator: true).pop(); // Pop loading dialog
+      // AuthGate will handle navigation
     } catch (e) {
       if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop(); // Pop loading dialog
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Logout failed: ${e.toString()}'),
+            content: Text('Account deletion failed: ${e.toString()}'),
             backgroundColor: AppColors.errorColor,
           ),
         );
@@ -90,89 +185,164 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
+  // =======================================================================
+  // ===                  *** END OF DELETION LOGIC ***                  ===
+  // =======================================================================
+
+  void _confirmLogout(BuildContext context) async {
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Logout'),
+        content: const Text('Are you sure you want to log out?'),
+        shape: RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel')),
+          TextButton(
+            style: TextButton.styleFrom(foregroundColor: AppColors.errorColor),
+            child: const Text('Logout'),
+            onPressed: () => Navigator.of(context).pop(true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) _logout(context);
+  }
+
+  void _logout(BuildContext context) async {
+    try {
+      await _authService.signOut();
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text('Logout failed: ${e.toString()}'),
+              backgroundColor: AppColors.errorColor),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    // This is the body content for a tab in MainScreen.
-    // NO Scaffold or AppBar here.
     return Container(
       color: AppColors.background,
       child: ListView(
-        padding: AppStyles.pagePadding.copyWith(top: 10.0, bottom: 20.0),
+        padding: AppStyles.pagePadding.copyWith(top: 24.0, bottom: 24.0),
         children: <Widget>[
+          // --- Account Section ---
           _buildSectionTitle('Account'),
-          _buildSettingsItem(
-            context,
-            icon: Icons.person_outline,
-            title: 'Profile Management',
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage()),
-              );
-            },
+          Card(
+            elevation: AppStyles.elevationLow,
+            shape: RoundedRectangleBorder(
+                borderRadius: AppStyles.cardBorderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: _buildSettingsItem(
+              context,
+              icon: Icons.person_outline_rounded,
+              title: 'Profile Management',
+              subtitle: 'Update your personal details',
+              onTap: () => Navigator.push(context,
+                  MaterialPageRoute(builder: (context) => const ProfilePage())),
+            ),
           ),
-          const Divider(indent: 16, endIndent: 16, height: 20, thickness: 0.5),
+          const SizedBox(height: 24),
 
+          // --- Support Section ---
           _buildSectionTitle('Support'),
-          _buildSettingsItem(
-            context,
-            icon: Icons.contact_support_outlined,
-            title: 'Contact Support (Email)',
-            onTap:
-                () => _launchURL(
-                  context,
-                  'mailto:support@eternalspace.com?subject=EternalSpace App Support Request',
-                ),
+          Card(
+            elevation: AppStyles.elevationLow,
+            shape: RoundedRectangleBorder(
+                borderRadius: AppStyles.cardBorderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsItem(context,
+                    icon: Icons.email_outlined,
+                    title: 'Email Support',
+                    subtitle: 'benjaminwali03@gmail.com',
+                    onTap: () => _launchURL(context,
+                        'mailto:benjaminwali03@gmail.com?subject=EternalSpace App Support Request')),
+                _buildDivider(),
+                _buildSettingsItem(context,
+                    icon: Icons.phone_outlined,
+                    title: 'Call Support',
+                    subtitle: '+254740823906',
+                    onTap: () => _launchURL(context, 'tel:+254740823906')),
+                _buildDivider(),
+                _buildSettingsItem(context,
+                    icon: Icons.chat_bubble_outline_rounded,
+                    title: 'Contact via WhatsApp',
+                    subtitle: '+254740823906',
+                    onTap: () => _launchURL(context,
+                        'https://wa.me/254740823906?text=Hello%20EternalSpace%20Support')),
+              ],
+            ),
           ),
-          _buildSettingsItem(
-            context,
-            icon: Icons.message_outlined,
-            title: 'Contact Support (WhatsApp)',
-            onTap:
-                () => _launchURL(
-                  context,
-                  // Ensure this is a valid WhatsApp link structure
-                  'https://wa.me/254700000000?text=Hello%20EternalSpace%20Support', // Replace with actual number
-                ),
-          ),
-          const Divider(indent: 16, endIndent: 16, height: 20, thickness: 0.5),
+          const SizedBox(height: 24),
 
+          // --- Legal Section ---
           _buildSectionTitle('Legal'),
-          _buildSettingsItem(
-            context,
-            icon: Icons.gavel_outlined,
-            title: 'Terms and Conditions',
-            // Example: if your URL is just 'eternalspace.com/terms', the _launchURL will prepend 'https://'
-            onTap: () => _launchURL(context, 'eternalspace.com/terms'),
+          Card(
+            elevation: AppStyles.elevationLow,
+            shape: RoundedRectangleBorder(
+                borderRadius: AppStyles.cardBorderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsItem(context,
+                    icon: Icons.gavel_rounded,
+                    title: 'Terms and Conditions',
+                    onTap: () => _showLegalDialog(context,
+                        'Terms and Conditions', LegalText.termsAndConditions)),
+                _buildDivider(),
+                _buildSettingsItem(context,
+                    icon: Icons.privacy_tip_outlined,
+                    title: 'Privacy Policy',
+                    onTap: () => _showLegalDialog(
+                        context, 'Privacy Policy', LegalText.privacyPolicy)),
+              ],
+            ),
           ),
-          _buildSettingsItem(
-            context,
-            icon: Icons.privacy_tip_outlined,
-            title: 'Privacy Policy',
-            onTap: () => _launchURL(context, 'eternalspace.com/privacy'),
-          ),
-          const Divider(indent: 16, endIndent: 16, height: 20, thickness: 0.5),
+          const SizedBox(height: 24),
 
-          _buildSectionTitle('App Info'),
-          _buildSettingsItem(
-            context,
-            icon: Icons.info_outline,
-            title: 'App Version',
-            subtitle:
-                '1.0.0 (Build 1)', // TODO: Get this dynamically using package_info_plus
-            onTap: null,
+          // ===========================================================
+          // ===        *** NEW ACCOUNT MANAGEMENT SECTION ***         ===
+          // ===========================================================
+          _buildSectionTitle('Account Management'),
+          Card(
+            elevation: AppStyles.elevationLow,
+            shape: RoundedRectangleBorder(
+                borderRadius: AppStyles.cardBorderRadius),
+            clipBehavior: Clip.antiAlias,
+            child: Column(
+              children: [
+                _buildSettingsItem(
+                  context,
+                  icon: Icons.logout_rounded,
+                  title: 'Logout',
+                  iconColor: AppColors.errorColor,
+                  onTap: () => _confirmLogout(context),
+                ),
+                _buildDivider(),
+                _buildSettingsItem(
+                  context,
+                  icon: Icons.delete_forever_outlined,
+                  title: 'Delete Account',
+                  subtitle: 'This action is permanent',
+                  iconColor: AppColors.errorColor, // Style to indicate danger
+                  onTap: () => _handleAccountDeletion(context),
+                ),
+              ],
+            ),
           ),
-          const Divider(indent: 16, endIndent: 16, height: 30, thickness: 0.5),
+          // ===========================================================
 
-          _buildSettingsItem(
-            context,
-            icon: Icons.logout_outlined,
-            title: 'Logout',
-            titleColor: AppColors.errorColor,
-            iconColor: AppColors.errorColor,
-            onTap: () => _logout(context),
-          ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 40),
+          Center(child: Text('App Version 1.0.0', style: AppStyles.caption)),
         ],
       ),
     );
@@ -180,42 +350,37 @@ class SettingsPage extends StatelessWidget {
 
   Widget _buildSectionTitle(String title) {
     return Padding(
-      padding: const EdgeInsets.only(
-        left: 16.0,
-        right: 16.0,
-        top: 16.0,
-        bottom: 8.0,
-      ),
+      padding: const EdgeInsets.fromLTRB(16.0, 16.0, 16.0, 8.0),
       child: Text(
         title.toUpperCase(),
-        style: AppStyles.caption.copyWith(
-          fontWeight: FontWeight.bold,
-          color: AppColors.appBar.withOpacity(0.9),
-          letterSpacing: 0.8,
-        ),
+        style: AppStyles.bodyText2.copyWith(
+            fontWeight: FontWeight.bold,
+            color: AppColors.secondaryText,
+            letterSpacing: 0.8),
       ),
     );
   }
 
+  // UPDATED to handle custom colors
   Widget _buildSettingsItem(
     BuildContext context, {
     required IconData icon,
     required String title,
     String? subtitle,
     VoidCallback? onTap,
-    Color? titleColor,
     Color? iconColor,
+    Color? titleColor,
   }) {
     return Material(
-      color: AppColors.cardBackground,
+      color: Colors.transparent, // Use transparent to show card color
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 14.0),
           child: Row(
             children: [
               Icon(icon, color: iconColor ?? AppColors.appBar, size: 24),
-              const SizedBox(width: 16),
+              const SizedBox(width: 20),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,32 +388,35 @@ class SettingsPage extends StatelessWidget {
                     Text(
                       title,
                       style: AppStyles.bodyText1.copyWith(
-                        fontWeight: FontWeight.w500,
-                        color: titleColor ?? AppStyles.bodyText1.color,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                        color: titleColor, // Apply custom color if provided
                       ),
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
-                      Text(
-                        subtitle,
-                        style: AppStyles.caption.copyWith(
-                          color: AppStyles.caption.color?.withOpacity(0.8),
-                        ),
-                      ),
+                      Text(subtitle,
+                          style: AppStyles.caption.copyWith(fontSize: 14)),
                     ],
                   ],
                 ),
               ),
               if (onTap != null)
-                Icon(
-                  Icons.chevron_right,
-                  color: Colors.grey.shade500,
-                  size: 22,
-                ),
+                Icon(Icons.chevron_right,
+                    color: Colors.grey.shade400, size: 22),
             ],
           ),
         ),
       ),
     );
+  }
+
+  Widget _buildDivider() {
+    return const Divider(
+        height: 1,
+        thickness: 1,
+        indent: 60,
+        endIndent: 16,
+        color: AppColors.background);
   }
 }

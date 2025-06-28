@@ -41,6 +41,8 @@ class AppColors {
     0xFF2E7D32,
   ); // Example: Your primary green (similar to spotsAvailable)
   static const Color statusRejected = Colors.red; // Example: Red
-  static const Color statusExpired = Colors.grey; // Example: Grey
+  static const Color statusExpired = Colors.grey;
+
+  static var statusUsed; // Example: Grey
   // -----------------------------
 }

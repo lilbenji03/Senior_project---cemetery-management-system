@@ -2,7 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart'; // For AuthException type
 import 'signup_screen.dart';
-// MainScreen import is not needed here as AuthGate handles navigation
 import '../constants/app_colors.dart';
 import '../constants/app_styles.dart';
 import '../services/auth_service.dart'; // Import your AuthService
@@ -20,62 +19,36 @@ class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _isLoading = false;
   bool _obscurePassword = true;
-  final AuthService _authService = AuthService(); // Instance of AuthService
-  String? _errorMessage; // To display errors on the UI
+  final AuthService _authService = AuthService();
+  String? _errorMessage;
 
   Future<void> _loginUser() async {
     if (!_formKey.currentState!.validate()) {
-      print("LoginScreen: Form validation failed."); // DEBUG
       return;
     }
-
     setState(() {
       _isLoading = true;
-      _errorMessage = null; // Clear previous error message
+      _errorMessage = null;
     });
-    print(
-      "LoginScreen: Attempting to sign in with email: ${_emailController.text.trim()}",
-    ); // DEBUG
-
     try {
-      final AuthResponse res = await _authService.signInWithPassword(
+      await _authService.signInWithPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
       );
-      // If Supabase call was successful (didn't throw AuthException)
-      print(
-        "LoginScreen: AuthService.signInWithPassword call completed.",
-      ); // DEBUG
-      print(
-        "LoginScreen: Response User ID: ${res.user?.id}, Has Session: ${res.session != null}",
-      ); // DEBUG
-      // AuthGate should now handle navigation based on onAuthStateChange.
-
-      // If login is successful and res.user is not null,
-      // _isLoading will be set to false in the finally block.
-      // AuthGate will then see the new session and navigate.
-      // No explicit navigation from here.
+      // AuthGate will handle navigation
     } on AuthException catch (e) {
-      print(
-        "LoginScreen: CAUGHT AuthException: Code: ${e.statusCode}, Message: ${e.message}",
-      ); // DEBUG
       if (mounted) {
-        setState(() {
-          _errorMessage = e.message; // Display the Supabase specific error
-        });
+        setState(() => _errorMessage = e.message);
       }
     } catch (e) {
-      print("LoginScreen: CAUGHT general Exception: ${e.toString()}"); // DEBUG
       if (mounted) {
-        setState(() {
-          _errorMessage = 'An unexpected error occurred. Please try again.';
-        });
+        setState(
+          () =>
+              _errorMessage = 'An unexpected error occurred. Please try again.',
+        );
       }
     } finally {
       if (mounted) {
-        print(
-          "LoginScreen: Finally block, setting _isLoading to false.",
-        ); // DEBUG
         setState(() => _isLoading = false);
       }
     }
@@ -90,162 +63,254 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
+    InputDecoration fieldDecoration(
+      String label,
+      String hint,
+      IconData prefixIcon, {
+      Widget? suffixIcon,
+    }) {
+      return InputDecoration(
+        labelText: label,
+        hintText: hint,
+        prefixIcon: Icon(
+          prefixIcon,
+          color: AppColors.secondaryText.withOpacity(0.7),
+        ),
+        suffixIcon: suffixIcon,
+        labelStyle: AppStyles.bodyText2,
+        hintStyle: AppStyles.bodyText2.copyWith(
+          color: AppColors.secondaryText.withOpacity(0.5),
+        ),
+        filled: true,
+        fillColor: AppColors.background.withOpacity(
+          0.8,
+        ), // A slightly different shade for fill
+        border: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: BorderSide.none, // No visible border initially
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: BorderSide(
+            color: AppColors.secondaryText.withOpacity(0.2),
+          ),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: BorderSide(
+            color: AppColors.buttonBackground,
+            width: 1.5,
+          ), // Use accent color for focus
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: BorderSide(color: AppColors.errorColor, width: 1.0),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: AppStyles.buttonBorderRadius,
+          borderSide: BorderSide(color: AppColors.errorColor, width: 1.5),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Login', style: AppStyles.appBarTitleStyle),
-        automaticallyImplyLeading:
-            false, // No back button if pushed from WelcomeScreen
-      ),
       body: Center(
         child: SingleChildScrollView(
-          padding: AppStyles.pagePadding.copyWith(top: 30, bottom: 20),
+          padding: AppStyles.pagePadding.copyWith(
+            top: 40,
+            bottom: 20,
+          ), // More top padding
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 400),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: <Widget>[
-                  Image.asset('assets/images/app_logo.png', height: 100),
-                  const SizedBox(height: 20), // Reduced space
-                  Text(
-                    'Sign in to EternalSpace', // App Name
-                    textAlign: TextAlign.center,
-                    style: AppStyles.cardTitleStyle.copyWith(
-                      fontSize: 22,
-                      color: AppColors.primaryText,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Display Error Message if any
-                  if (_errorMessage != null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 12.0),
-                      child: Text(
-                        _errorMessage!,
-                        style: AppStyles.bodyText2.copyWith(
-                          color: AppColors.errorColor,
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+              decoration: BoxDecoration(
+                color: AppColors.cardBackground,
+                borderRadius: AppStyles.cardBorderRadius,
+                boxShadow: AppStyles.cardBoxShadow,
+              ),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    Image.asset(
+                      'assets/images/app_logo.png',
+                      height: 80,
+                    ), // Slightly smaller logo
+                    const SizedBox(height: 24),
+                    Text(
+                      'Sign In', // Changed from 'Login' for common phrasing
+                      textAlign: TextAlign.center,
+                      style: AppStyles.titleStyle.copyWith(
+                        fontSize: 28, // More prominent
+                        fontWeight: FontWeight.bold,
+                        color: AppColors.primaryText,
                       ),
                     ),
-
-                  const SizedBox(height: 16),
-
-                  TextFormField(
-                    controller: _emailController,
-                    decoration: const InputDecoration(
-                      labelText: 'Email Address',
-                      hintText: 'you@example.com',
-                      prefixIcon: Icon(Icons.email_outlined),
-                    ),
-                    style: AppStyles.bodyText1,
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your email';
-                      }
-                      if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                        return 'Please enter a valid email address';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 20),
-                  TextFormField(
-                    controller: _passwordController,
-                    decoration: InputDecoration(
-                      labelText: 'Password',
-                      hintText: 'Enter your password',
-                      prefixIcon: const Icon(Icons.lock_outline),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscurePassword
-                              ? Icons.visibility_off_outlined
-                              : Icons.visibility_outlined,
-                          color: AppColors.secondaryText.withOpacity(0.7),
-                        ),
-                        onPressed:
-                            () => setState(
-                              () => _obscurePassword = !_obscurePassword,
-                            ),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Welcome back to EternalSpace!', // Friendly subtitle
+                      textAlign: TextAlign.center,
+                      style: AppStyles.bodyText1.copyWith(
+                        color: AppColors.secondaryText,
                       ),
                     ),
-                    style: AppStyles.bodyText1,
-                    obscureText: _obscurePassword,
-                    validator: (value) {
-                      if (value == null || value.isEmpty) {
-                        return 'Please enter your password';
-                      }
-                      return null;
-                    },
-                  ),
-                  const SizedBox(height: 10),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: () {
-                        // TODO: Implement Forgot Password functionality
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Forgot Password (Not Implemented Yet)',
-                            ),
+                    const SizedBox(height: 24),
+
+                    if (_errorMessage != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16.0),
+                        child: Text(
+                          _errorMessage!,
+                          style: AppStyles.bodyText2.copyWith(
+                            color: AppColors.errorColor,
+                            fontSize: 14,
                           ),
-                        );
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: fieldDecoration(
+                        'Email Address',
+                        'you@example.com',
+                        Icons.email_outlined,
+                      ),
+                      style: AppStyles.bodyText1,
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your email';
+                        }
+                        if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                          return 'Please enter a valid email address';
+                        }
+                        return null;
                       },
-                      child: const Text(
-                        'Forgot Password?',
-                      ), // Style from TextButtonTheme
                     ),
-                  ),
-                  const SizedBox(height: 25),
-                  _isLoading
-                      ? const Center(
-                        child: CircularProgressIndicator(
-                          color: AppColors.appBar,
+                    const SizedBox(height: 20),
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: fieldDecoration(
+                        'Password',
+                        'Enter your password',
+                        Icons.lock_outline,
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: AppColors.secondaryText.withOpacity(0.7),
+                          ),
+                          onPressed:
+                              () => setState(
+                                () => _obscurePassword = !_obscurePassword,
+                              ),
                         ),
-                      )
-                      : ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size(
-                            double.infinity,
-                            50,
-                          ), // Use global theme
-                          // textStyle: AppStyles.buttonTextStyle, // Comes from global theme
-                        ),
-                        onPressed: _loginUser,
-                        child: const Text('Login'),
                       ),
-                  const SizedBox(height: 30),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: <Widget>[
-                      Text(
-                        "Don't have an account? ",
-                        style: AppStyles.bodyText2,
-                      ),
-                      TextButton(
+                      style: AppStyles.bodyText1,
+                      obscureText: _obscurePassword,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your password';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 10),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
                         onPressed: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => const SignUpScreen(),
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                'Forgot Password (Not Implemented Yet)',
+                              ),
                             ),
                           );
                         },
-                        child: const Text(
-                          'Sign Up',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ), // Uses TextButtonTheme
+                        style: TextButton.styleFrom(
+                          foregroundColor:
+                              AppColors
+                                  .secondaryText, // Softer color for less emphasis
+                          textStyle: AppStyles.bodyText2.copyWith(
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                        child: const Text('Forgot Password?'),
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    const SizedBox(height: 24), // Increased spacing
+                    _isLoading
+                        ? Center(
+                          child: CircularProgressIndicator(
+                            color:
+                                AppColors
+                                    .buttonBackground, // Use primary action color
+                          ),
+                        )
+                        : ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.buttonBackground,
+                            foregroundColor: AppColors.buttonText,
+                            minimumSize: const Size(double.infinity, 50),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: AppStyles.buttonBorderRadius,
+                            ),
+                            textStyle:
+                                AppStyles
+                                    .buttonTextStyle, // Your defined button text style
+                          ),
+                          onPressed: _loginUser,
+                          child: const Text('Sign In'), // Changed from Login
+                        ),
+                    const SizedBox(height: 30),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Text(
+                          "Don't have an account? ",
+                          style: AppStyles.bodyText2.copyWith(
+                            color: AppColors.secondaryText,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const SignUpScreen(),
+                              ),
+                            );
+                          },
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 2,
+                            ), // Tighter padding
+                            foregroundColor:
+                                AppColors
+                                    .buttonBackground, // Use primary action color for emphasis
+                          ),
+                          child: Text(
+                            'Sign Up',
+                            style: AppStyles.bodyText1.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  AppColors
+                                      .buttonBackground, // Explicitly color the text
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

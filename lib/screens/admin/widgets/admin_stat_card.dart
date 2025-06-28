@@ -8,54 +8,84 @@ class AdminStatCard extends StatelessWidget {
   final String label;
   final String value;
   final Color iconColor;
+  final VoidCallback? onTap;
 
   const AdminStatCard({
     super.key,
     required this.iconData,
     required this.label,
     required this.value,
-    required this.iconColor,
+    this.iconColor = AppColors.primaryText,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Card(
-      elevation: AppStyles.elevationLow, // Or 1.5 directly
-      color: AppColors.cardBackground,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10.0)),
-      child: Padding(
-        // Further reduced vertical padding, horizontal can remain
-        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Icon(iconData, size: 30, color: iconColor), // Icon size 30
-            const SizedBox(height: 6), // Spacing reduced to 6
-            Text(
-              value,
-              style: AppStyles.titleStyle.copyWith(
-                // Assuming titleStyle is appropriate base
-                fontSize: 18, // Value font size 18
-                color: AppColors.primaryText,
-                fontWeight: FontWeight.bold, // Make value stand out
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: AppStyles.cardBorderRadius,
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: AppStyles.cardBorderRadius,
+        child: Container(
+          decoration: BoxDecoration(
+            borderRadius: AppStyles.cardBorderRadius,
+            color: AppColors.cardBackground,
+            boxShadow: AppStyles.cardBoxShadow,
+          ),
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // --- HEADER ---
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 18,
+                    backgroundColor: iconColor.withOpacity(0.1),
+                    child: Icon(iconData, size: 20, color: iconColor),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: AppStyles.bodyText2,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
               ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 2), // Spacing reduced to 2
-            Text(
-              label,
-              style: AppStyles.caption.copyWith(
-                // Using caption style as a base for smaller text
-                color: AppColors.secondaryText,
-                fontSize: 12, // Label font size 12
-                height: 1.1, // Line height very tight
+              const SizedBox(height: 12),
+
+              // --- VALUE ---
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.primaryText,
+                    ),
+                  ),
+                  const Spacer(),
+                  // Add a clear visual indicator if the card is tappable
+                  if (onTap != null)
+                    const Icon(
+                      Icons.arrow_forward_rounded,
+                      color: AppColors.secondaryText,
+                      size: 20,
+                    ),
+                ],
               ),
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

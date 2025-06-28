@@ -1,4 +1,5 @@
 // lib/models/grave_care_service_model.dart
+import 'package:flutter/material.dart';
 
 enum GraveCareServiceType {
   cleaning,
@@ -13,12 +14,9 @@ class GraveCareService {
   final String name;
   final GraveCareServiceType type;
   final String description;
-  final String estimatedCostRange; // e.g., "$90 - $300", "From $50 + flowers"
-  final String?
-  moreInfoLink; // Optional link to an external provider or info page
-  final String?
-  providerExample; // e.g., "gravecareservices.com", "Heaven's Maid"
-  final String? contactPhoneNumber; // <--- ADDED THIS FIELD
+  final String estimatedCostRange;
+  final String? providerExample;
+  final String? contactPhoneNumber;
 
   GraveCareService({
     required this.id,
@@ -26,63 +24,77 @@ class GraveCareService {
     required this.type,
     required this.description,
     required this.estimatedCostRange,
-    this.moreInfoLink,
     this.providerExample,
-    this.contactPhoneNumber, // <--- ADDED TO CONSTRUCTOR
+    this.contactPhoneNumber,
   });
+
+  // Helper getter for UI icons
+  IconData get icon {
+    switch (type) {
+      case GraveCareServiceType.cleaning:
+        return Icons.cleaning_services_rounded;
+      case GraveCareServiceType.floral:
+        return Icons.local_florist_rounded;
+      case GraveCareServiceType.construction:
+        return Icons.construction_rounded;
+      case GraveCareServiceType.memorialPage:
+        return Icons.public_rounded;
+      case GraveCareServiceType.maintenancePlan:
+        return Icons.event_repeat_rounded;
+    }
+  }
 }
 
-// Sample Data for GraveCareService
+// Sample Data
 List<GraveCareService> sampleGraveCareServices = [
   GraveCareService(
     id: 'GC001',
     name: 'Standard Grave Cleaning',
     type: GraveCareServiceType.cleaning,
     description:
-        'Cleaning of headstone, removal of debris, and general upkeep of the grave area.',
-    estimatedCostRange: 'KES 9,000 - KES 30,000',
-    providerExample: 'Local professionals',
-    contactPhoneNumber: '+254 700 123 456', // Example Kenyan phone number
+        'Comprehensive cleaning of the headstone and grave area, including removal of debris, weeds, and gentle washing of the stone.',
+    estimatedCostRange: 'KES 9,000 - 30,000',
+    providerExample: 'Local Professionals',
+    contactPhoneNumber: '+254700123456',
   ),
   GraveCareService(
     id: 'GC002',
-    name: 'Floral Arrangement Placement',
+    name: 'Floral Arrangement Service',
     type: GraveCareServiceType.floral,
     description:
-        'Placement of fresh or artificial flowers on the grave. Cost of flowers usually separate.',
-    estimatedCostRange: 'Approx. KES 5,000 (service fee)',
-    providerExample: 'gravecareservices.com (example)',
-    contactPhoneNumber: '+254 711 987 654', // Example Kenyan phone number
+        'Placement of fresh or high-quality artificial flowers on the grave. The cost of flowers is typically separate from the service fee.',
+    estimatedCostRange: 'Service from KES 5,000',
+    providerExample: 'Eternal Blooms',
+    contactPhoneNumber: '+254711987654',
   ),
   GraveCareService(
     id: 'GC003',
-    name: 'Headstone & Memorial Construction',
+    name: 'Memorial Construction',
     type: GraveCareServiceType.construction,
     description:
-        'Building or renovating grave structures, erecting headstones, or constructing grave surrounds. Quotes provided upon inquiry.',
-    estimatedCostRange: 'Varies (Request Quote)',
-    providerExample: 'Local service providers',
-    // No phone number for this example, to test conditional display
+        'Includes headstone erection, grave surrounds (curbs), and memorial renovations. Quotes are provided upon site visit and inquiry.',
+    estimatedCostRange: 'Varies',
+    providerExample: 'Local Stonemasons',
+    contactPhoneNumber: '+254722333444',
   ),
   GraveCareService(
     id: 'GC004',
-    name: 'Online Memorial Page Creation',
-    type: GraveCareServiceType.memorialPage,
+    name: 'Annual Maintenance Plan',
+    type: GraveCareServiceType.maintenancePlan,
     description:
-        'Creation of an online memorial page with photos, biography, and messages.',
-    estimatedCostRange: 'Varies by features',
-    providerExample: "Heaven's Maid (example)",
-    moreInfoLink: 'https://example.com/memorialpageinfo',
-    contactPhoneNumber: '+254 722 111 222', // Example Kenyan phone number
+        'Ensure the gravesite remains pristine. Includes 3-4 scheduled visits per year for full cleaning, weeding, and basic upkeep.',
+    estimatedCostRange: 'Approx. KES 15,000/year',
+    providerExample: 'Various Providers',
+    contactPhoneNumber: '+254733555888',
   ),
   GraveCareService(
     id: 'GC005',
-    name: 'Scheduled Maintenance Plan (3 Visits/Year)',
-    type: GraveCareServiceType.maintenancePlan,
+    name: 'Online Memorial Page',
+    type: GraveCareServiceType.memorialPage,
     description:
-        'Ensures the gravesite remains in good condition with 3 scheduled visits per year for cleaning and upkeep.',
-    estimatedCostRange: 'Approx. KES 15,000 per year',
-    providerExample: 'Various providers',
-    contactPhoneNumber: '+254 733 555 888', // Example Kenyan phone number
+        'A beautiful, permanent online page to share memories, photos, and a biography of your loved one with family and friends.',
+    estimatedCostRange: 'From KES 10,000',
+    providerExample: "Legacy Pages",
+    contactPhoneNumber: '+254733555887',
   ),
 ];
