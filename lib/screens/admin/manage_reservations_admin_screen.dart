@@ -1,27 +1,25 @@
 // lib/screens/admin/manage_reservations_admin_screen.dart
-import 'dart:async'; // For StreamSubscription if you add realtime later
-import 'dart:math';
+import 'dart:async';
+import 'package:cmc/models/admin_reservation_model.dart';
 import 'package:cmc/models/user_profile_model.dart';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
-
-import '../../models/reservation_model.dart';
-import '../../models/space_model.dart'; // UPDATED: For SpaceStatus enum
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../models/reservation_model.dart'; // Still needed for Enums
+import '../../models/space_model.dart'; // Still needed for Enums
 import '../../constants/app_colors.dart';
 import '../../constants/app_styles.dart';
-
-// final supabase = Supabase.instance.client; // Already globally available or use Supabase.instance.client directly
 
 class ManageReservationsAdminScreen extends StatefulWidget {
   final String? cemeteryId;
   final String? cemeteryName;
+  final UserProfile userProfile;
 
   const ManageReservationsAdminScreen({
     super.key,
     this.cemeteryId,
     this.cemeteryName,
-    required UserProfile userProfile,
+    required this.userProfile,
   });
 
   @override
@@ -31,28 +29,23 @@ class ManageReservationsAdminScreen extends StatefulWidget {
 
 class _ManageReservationsAdminScreenState
     extends State<ManageReservationsAdminScreen> {
-  List<Reservation> _reservations = [];
+  List<AdminReservationModel> _reservations = [];
   bool _isLoading = true;
   String? _errorMessage;
-  StreamSubscription<List<Map<String, dynamic>>>? _reservationsSubscription;
+  StreamSubscription? _reservationsSubscription;
 
-  // Use ReservationStatus enum for filter state
-  ReservationStatus? _selectedFilterStatus =
-      ReservationStatus.pendingApproval; // Default filter
+  ReservationStatus? _selectedFilterStatus = ReservationStatus.pendingApproval;
 
-  // Generate filter options from the enum
   List<DropdownMenuItem<ReservationStatus?>> _buildFilterOptions() {
     List<DropdownMenuItem<ReservationStatus?>> items = [
       const DropdownMenuItem<ReservationStatus?>(
-        value: null, // Represents "All Statuses"
+        value: null,
         child: Text("All Statuses"),
       ),
     ];
     items.addAll(
       ReservationStatus.values
-          .where(
-            (status) => status != ReservationStatus.unknown,
-          ) // Exclude unknown from filter
+          .where((status) => status != ReservationStatus.unknown)
           .map(
             (status) => DropdownMenuItem<ReservationStatus?>(
               value: status,
@@ -67,76 +60,84 @@ class _ManageReservationsAdminScreenState
   @override
   void initState() {
     super.initState();
-    print(
-      "ManageReservationsAdminScreen: initState - Cemetery ID: ${widget.cemeteryId ?? "ALL"}, Name: ${widget.cemeteryName ?? "N/A"}",
-    );
-    _fetchAdminReservations();
-    _subscribeToReservationChanges();
+    _handleCemeteryChange();
   }
 
   @override
   void didUpdateWidget(ManageReservationsAdminScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // Refetch if the cemetery context changes. Filter changes trigger fetch directly.
     if (widget.cemeteryId != oldWidget.cemeteryId) {
-      print(
-        "ManageReservationsAdminScreen: didUpdateWidget - Cemetery context changed. Fetching reservations...",
-      );
-      _fetchAdminReservations();
+      _handleCemeteryChange();
     }
   }
 
+  @override
+  void dispose() {
+    _reservationsSubscription?.cancel();
+    _reservationsSubscription = null;
+    super.dispose();
+  }
+
+  void _handleCemeteryChange() {
+    _reservationsSubscription?.cancel();
+    _reservationsSubscription = null;
+
+    if (widget.cemeteryId != null) {
+      _fetchAdminReservations();
+    } else {
+      setState(() {
+        _isLoading = false;
+        _errorMessage = "No cemetery assigned to this manager account.";
+        _reservations = [];
+      });
+    }
+  }
+
+  // --- THIS IS THE CORRECTED METHOD ---
   Future<void> _fetchAdminReservations() async {
-    if (!mounted) return;
+    if (!mounted || widget.cemeteryId == null) return;
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
-    print(
-      "ManageReservationsAdminScreen: Fetching reservations. Cemetery ID: ${widget.cemeteryId}, Filter Status: ${_selectedFilterStatus?.name ?? 'all'}",
-    );
 
     try {
-      var query = Supabase.instance.client.from('reservations').select('''
-            id, user_id, cemetery_id, cemetery_space_id, space_identifier, cemetery_name, 
-            plot_type, status, requested_at, approved_at, expires_at, 
-            estimated_cost, amount_paid, payment_method, payment_reference, payment_date,
-            burial_permit_number, selected_burial_date, deceased_name,
-            created_at, updated_at,
-            profiles ( id, full_name, email, phone_number ),
-            cemeteries ( name ), 
-            cemetery_spaces ( id, space_identifier, plot_type, status ) 
-          '''); // Updated select, ensure fields match Reservation.fromJson
+      // Query the simple, secure VIEW instead of the complex table join.
+      // The RLS policy on the VIEW handles all the security.
+      var query = Supabase.instance.client
+          .from('detailed_reservations') // <-- Query the VIEW
+          .select('*'); // <-- Select all columns from the VIEW
 
-      if (widget.cemeteryId != null) {
-        query = query.eq('cemetery_id', widget.cemeteryId!);
-      }
+      // Apply filters directly to the query on the VIEW
+      query = query.eq('cemetery_id', widget.cemeteryId!);
 
       if (_selectedFilterStatus != null) {
-        query = query.eq(
-          'status',
-          _selectedFilterStatus!.toJson(),
-        ); // Use enum's toJson
+        query = query.eq('status', _selectedFilterStatus!.toJson());
       }
 
       final response = await query.order('requested_at', ascending: true);
-      print(
-        "ManageReservationsAdminScreen: Supabase response. Records: ${(response).length}",
-      );
 
       if (mounted) {
         setState(() {
-          _reservations =
-              (response).map((data) => Reservation.fromJson(data)).toList();
+          _reservations = (response as List)
+              .map((data) => AdminReservationModel.fromJson(data))
+              .toList();
           _isLoading = false;
+        });
+        _subscribeToReservationChanges();
+      }
+    } on PostgrestException catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = "Database Error: ${e.message}.";
+          _isLoading = false;
+          _reservations = [];
         });
       }
     } catch (e) {
-      print("ManageReservationsAdminScreen: ERROR fetching: $e");
       if (mounted) {
         setState(() {
-          _errorMessage =
-              "Failed to load: ${e.toString().substring(0, min(e.toString().length, 150))}";
+          _errorMessage = "An error occurred: ${e.toString()}";
           _isLoading = false;
           _reservations = [];
         });
@@ -144,167 +145,131 @@ class _ManageReservationsAdminScreenState
     }
   }
 
-// In class _ManageReservationsAdminScreenState
-
   void _subscribeToReservationChanges() {
-    _reservationsSubscription?.cancel(); // Cancel any existing subscription
+    _reservationsSubscription?.cancel();
+    if (!mounted) return;
 
-    // Start with the base stream builder from .stream()
-    // This returns a PostgrestStreamBuilder which IS a PostgrestFilterBuilder
-    SupabaseStreamFilterBuilder? streamQuery = Supabase.instance.client
+    // The stream still listens to the original table for changes
+    _reservationsSubscription = Supabase.instance.client
         .from('reservations')
-        .stream(primaryKey: ['id']);
-
-    // Conditionally apply filters by reassigning the streamQuery variable
-    if (widget.cemeteryId != null) {
-      // .eq() is available on PostgrestFilterBuilder (which PostgrestStreamBuilder is)
-      // and returns PostgrestFilterBuilder, so this chaining is correct.
-      streamQuery = streamQuery.eq('cemetery_id', widget.cemeteryId!)
-          as SupabaseStreamFilterBuilder?;
-    }
-
-    // Add other stream filters similarly if needed:
-    // if (_someOtherStreamFilterCondition) {
-    //   streamQuery = streamQuery.lt('some_column', someValue); // Reassign again
-    // }
-
-    // Finally, listen to the configured streamQuery.
-    // Ordering on the stream for individual change events is not as reliable as ordering a full query.
-    // It's better to rely on _fetchAdminReservations for ordered data.
-    _reservationsSubscription = streamQuery!
-        // .order('requested_at', ascending: true) // Generally omit order on the stream itself for individual events
-        .listen(
-      (List<Map<String, dynamic>> data) {
-        print(
-            "ManageReservationsAdminScreen: Stream received ${data.length} updates. Refetching for consistency with filters.");
+        .stream(primaryKey: ['id']).listen(
+      (data) {
         if (mounted) {
-          // Refetch to apply all current server-side filters and ordering
+          // When a change happens, refetch from the VIEW
           _fetchAdminReservations();
         }
       },
-      onError: (error, s) {
-        // Added stacktrace
-        if (mounted) {
-          print("Reservations stream error: $error");
-          print("Stacktrace for reservations stream error: $s");
-        }
+      onError: (e) => print("Reservations Realtime Error: $e"),
+    );
+  }
+
+  void _showConfirmationDialog({
+    required BuildContext parentContext,
+    required String title,
+    required String content,
+    required String confirmText,
+    required Color confirmColor,
+    required VoidCallback onConfirm,
+  }) {
+    showDialog(
+      context: parentContext,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape:
+              RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
+          title: Text(title, style: AppStyles.titleStyle),
+          content: Text(content, style: AppStyles.bodyText1),
+          actions: <Widget>[
+            TextButton(
+              child: Text('Cancel', style: AppStyles.bodyText2),
+              onPressed: () => Navigator.of(context).pop(),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: confirmColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: AppStyles.buttonBorderRadius)),
+              onPressed: () {
+                Navigator.of(context).pop();
+                onConfirm();
+              },
+              child: Text(confirmText),
+            ),
+          ],
+        );
       },
     );
   }
 
-  Future<void> _updateReservationAndAssociatedSpace(
-    String reservationId,
-    ReservationStatus newReservationStatus,
-    String cemeterySpacePk, // This is the PK (id) of the cemetery_spaces record
-    SpaceStatus newSpaceEnumStatus, // Use SpaceStatus enum
-  ) async {
+  Future<void> _updateReservationAndAssociatedSpace({
+    required String reservationId,
+    required ReservationStatus newReservationStatus,
+    required SpaceStatus newSpaceStatus,
+  }) async {
     if (!mounted) return;
-    // Consider showing a confirmation dialog before critical actions like reject/approve
-    setState(
-      () => _isLoading = true,
-    ); // Indicate loading for this specific operation
     try {
-      final Map<String, dynamic> reservationUpdateData = {
-        'status': newReservationStatus.toJson(),
-        'updated_at':
-            DateTime.now().toIso8601String(), // If DB doesn't auto-update
-      };
-
-      if (newReservationStatus == ReservationStatus.approved) {
-        reservationUpdateData['approved_at'] = DateTime.now().toIso8601String();
-        // Expiry logic might be more complex (e.g., based on cemetery settings)
-        reservationUpdateData['expires_at'] =
-            DateTime.now().add(const Duration(days: 7)).toIso8601String();
-      } else if (newReservationStatus == ReservationStatus.rejected ||
-          newReservationStatus == ReservationStatus.cancelledByAdmin) {
-        reservationUpdateData['approved_at'] = null; // Clear approval info
-        reservationUpdateData['expires_at'] = null; // Clear expiry
-      }
-
-      // Use a transaction if your backend supports it for atomicity,
-      // or handle potential partial failures carefully.
-      // For Supabase, you can use an RPC function to do this atomically.
-      // Here, we do sequential updates:
-
-      // 1. Update Reservation
-      await Supabase.instance.client
-          .from('reservations')
-          .update(reservationUpdateData)
-          .eq('id', reservationId);
-
-      // 2. Update Cemetery Space status
-      await Supabase.instance.client
-          .from('cemetery_spaces') // UPDATED table name
-          .update({
-        'status': newSpaceEnumStatus.toJson(),
-      }) // UPDATED to use enum.toJson()
-          .eq('id', cemeterySpacePk);
-
+      await Supabase.instance.client.rpc('manage_reservation_status', params: {
+        'p_reservation_id': reservationId,
+        'p_new_reservation_status': newReservationStatus.toJson(),
+        'p_new_space_status': newSpaceStatus.toJson()
+      });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Reservation ${newReservationStatus.displayName.toLowerCase()}!',
-            ), // Use displayName
-            backgroundColor:
-                AppColors.statusApproved, // Or a color based on success/failure
+              'Reservation ${newReservationStatus.displayName.toLowerCase()} successfully!',
+            ),
+            backgroundColor: AppColors.statusApproved,
+            behavior: SnackBarBehavior.floating,
           ),
         );
-        // Data will be refreshed by the stream listener calling _fetchAdminReservations()
-        // Or call explicitly if stream is not setup for this detail:
-        // _fetchAdminReservations();
       }
-    } catch (e) {
+    } on PostgrestException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error updating status: ${e.toString()}'),
+            content: Text('Error: ${e.message}'),
             backgroundColor: AppColors.errorColor,
+            behavior: SnackBarBehavior.floating,
           ),
         );
       }
-    } finally {
-      if (mounted)
-        setState(() => _isLoading = false); // Stop loading for this operation
     }
   }
 
   String _formatDateTime(DateTime? dt) => dt == null
       ? 'N/A'
-      : DateFormat(
-          'MMM d, yyyy, hh:mm a',
-        ).format(dt.toLocal()); // Use toLocal()
+      : DateFormat('MMM d, yyyy, hh:mm a').format(dt.toLocal());
 
   Widget _buildStatusChip(ReservationStatus status) {
     Color chipColor;
-    Color textColor = Colors.white; // Default for darker chips
-
+    Color textColor = Colors.white;
     switch (status) {
       case ReservationStatus.pendingApproval:
-        chipColor = AppColors.statusPending; // Orange
-        textColor = Colors.black87; // Darker text for lighter orange
+        chipColor = AppColors.statusPending;
+        textColor = Colors.black87;
         break;
       case ReservationStatus.approved:
-        chipColor = AppColors.statusApproved; // Green
+        chipColor = AppColors.statusApproved;
         break;
       case ReservationStatus.rejected:
-        chipColor = AppColors.statusRejected; // Red
+      case ReservationStatus.cancelledByAdmin:
+        chipColor = AppColors.statusRejected;
         break;
       case ReservationStatus.completed:
-        chipColor = AppColors.statusCompleted; // Blue
+        chipColor = AppColors.statusCompleted;
         break;
       case ReservationStatus.expired:
-        chipColor = AppColors.statusExpired; // Grey
+        chipColor = AppColors.statusExpired;
         textColor = Colors.black87;
         break;
       case ReservationStatus.paymentPending:
-        chipColor = Colors.blueAccent; // Example
+        chipColor = Colors.blueAccent;
         break;
       case ReservationStatus.cancelledByUser:
-      case ReservationStatus.cancelledByAdmin:
         chipColor = Colors.grey.shade600;
         break;
-      case ReservationStatus.unknown:
       default:
         chipColor = Colors.grey.shade400;
         textColor = Colors.black87;
@@ -312,151 +277,100 @@ class _ManageReservationsAdminScreenState
     }
     return Chip(
       label: Text(
-        status.displayName
-            .toUpperCase(), // Use displayName, make it uppercase for chip style
+        status.displayName.toUpperCase(),
         style: TextStyle(
-          color: textColor,
-          fontSize: 9,
-          fontWeight: FontWeight.bold,
-        ),
+            color: textColor, fontSize: 9, fontWeight: FontWeight.bold),
       ),
       backgroundColor: chipColor,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 0),
-      labelPadding: const EdgeInsets.symmetric(
-        horizontal: 4.0,
-      ), // Adjust padding within chip
+      labelPadding: const EdgeInsets.symmetric(horizontal: 4.0),
       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       visualDensity: VisualDensity.compact,
     );
   }
 
-  void _showReservationDetailsDialog(Reservation reservation) {
+  void _showReservationDetailsDialog(AdminReservationModel reservation) {
     showDialog(
       context: context,
       builder: (BuildContext dialogContext) {
         return AlertDialog(
-          title: Text(
-            "Reservation Details (#${reservation.id.substring(0, 8)})",
-          ), // More context
-          shape: RoundedRectangleBorder(
-            borderRadius: AppStyles.cardBorderRadius,
-          ),
+          title: Text("Details for #${reservation.id.substring(0, 8)}"),
+          shape:
+              RoundedRectangleBorder(borderRadius: AppStyles.cardBorderRadius),
           content: SingleChildScrollView(
             child: ListBody(
               children: <Widget>[
                 _detailDialogRow("Cemetery:", reservation.cemeteryName),
-                _detailDialogRow(
-                  "Space ID:",
-                  reservation.spaceIdentifier,
-                ), // UPDATED
+                _detailDialogRow("Space ID:", reservation.spaceIdentifier),
                 _detailDialogRow("Plot Type:", reservation.plotType),
-                _detailDialogRow(
-                  "User:",
-                  reservation.userFullName ?? reservation.userEmail ?? "N/A",
-                ),
+                _detailDialogRow("User:",
+                    reservation.userFullName ?? reservation.userEmail ?? "N/A"),
                 if (reservation.userPhoneNumber != null)
                   _detailDialogRow("User Phone:", reservation.userPhoneNumber!),
                 _detailDialogRow(
-                  "Requested:",
-                  _formatDateTime(reservation.requestedAt),
-                ),
+                    "Requested:", _formatDateTime(reservation.requestedAt)),
+                _detailDialogRow("Status:", reservation.status.displayName),
                 if (reservation.approvedAt != null)
                   _detailDialogRow(
-                    "Approved:",
-                    _formatDateTime(reservation.approvedAt),
-                  ),
+                      "Approved:", _formatDateTime(reservation.approvedAt)),
                 if (reservation.expiresAt != null &&
                     (reservation.status == ReservationStatus.approved ||
                         reservation.status == ReservationStatus.paymentPending))
                   _detailDialogRow(
-                    "Expires/Payment Due:",
-                    _formatDateTime(reservation.expiresAt),
-                  ),
-                _detailDialogRow(
-                  "Status:",
-                  reservation.status.displayName,
-                ), // Use displayName
-                _detailDialogRow(
-                  "Est. Cost:",
-                  "KES ${reservation.estimatedCost.toStringAsFixed(2)}",
-                ),
-                if (reservation.burialPermitNumber != null &&
-                    reservation.burialPermitNumber!.isNotEmpty)
-                  _detailDialogRow(
-                    "Permit #:",
-                    reservation.burialPermitNumber!,
-                  ),
-                if (reservation.selectedBurialDate != null)
-                  _detailDialogRow(
-                    "Burial Date:",
-                    DateFormat(
-                      'MMM dd, yyyy',
-                    ).format(reservation.selectedBurialDate!),
-                  ),
-                if (reservation.deceasedName != null &&
-                    reservation.deceasedName!.isNotEmpty)
-                  _detailDialogRow("Deceased:", reservation.deceasedName!),
-                if (reservation.amountPaid != null)
-                  _detailDialogRow(
-                    "Amount Paid:",
-                    "KES ${reservation.amountPaid!.toStringAsFixed(2)}",
-                  ),
-                if (reservation.paymentMethodUsed != null &&
-                    reservation.paymentMethodUsed != PaymentMethod.unknown)
-                  _detailDialogRow(
-                    "Payment Method:",
-                    reservation.paymentMethodUsed!.displayName,
-                  ),
-                if (reservation.paymentReference != null)
-                  _detailDialogRow(
-                    "Payment Ref:",
-                    reservation.paymentReference!,
-                  ),
+                      "Expires:", _formatDateTime(reservation.expiresAt)),
+                _detailDialogRow("Est. Cost:",
+                    "KES ${reservation.estimatedCost.toStringAsFixed(2)}"),
               ],
             ),
           ),
           actionsAlignment: MainAxisAlignment.spaceAround,
           actions: <Widget>[
-            if (reservation.status == ReservationStatus.pendingApproval ||
-                reservation.status == ReservationStatus.paymentPending) ...[
+            if (reservation.status == ReservationStatus.pendingApproval) ...[
               TextButton(
-                child: const Text(
-                  "Approve",
-                  style: TextStyle(color: AppColors.statusApproved),
-                ),
+                child: const Text("Approve",
+                    style: TextStyle(color: AppColors.statusApproved)),
                 onPressed: () {
                   Navigator.of(dialogContext).pop();
-                  _updateReservationAndAssociatedSpace(
-                    reservation.id,
-                    ReservationStatus.approved,
-                    reservation.cemeterySpaceId, // Pass the actual space PK
-                    SpaceStatus.booked, // Set space to booked
+                  _showConfirmationDialog(
+                    parentContext: context,
+                    title: 'Approve Reservation?',
+                    content:
+                        'This will approve the reservation and mark the space as booked. Continue?',
+                    confirmText: 'Approve',
+                    confirmColor: AppColors.statusApproved,
+                    onConfirm: () => _updateReservationAndAssociatedSpace(
+                      reservationId: reservation.id,
+                      newReservationStatus: ReservationStatus.approved,
+                      newSpaceStatus: SpaceStatus.booked,
+                    ),
                   );
                 },
               ),
               TextButton(
-                child: const Text(
-                  "Reject",
-                  style: TextStyle(color: AppColors.statusRejected),
-                ),
+                child: const Text("Reject",
+                    style: TextStyle(color: AppColors.statusRejected)),
                 onPressed: () {
                   Navigator.of(dialogContext).pop();
-                  _updateReservationAndAssociatedSpace(
-                    reservation.id,
-                    ReservationStatus.rejected,
-                    reservation.cemeterySpaceId, // Pass the actual space PK
-                    SpaceStatus.available, // Make space available again
+                  _showConfirmationDialog(
+                    parentContext: context,
+                    title: 'Reject Reservation?',
+                    content:
+                        'This will reject the reservation and make the space available again. Continue?',
+                    confirmText: 'Reject',
+                    confirmColor: AppColors.statusRejected,
+                    onConfirm: () => _updateReservationAndAssociatedSpace(
+                      reservationId: reservation.id,
+                      newReservationStatus: ReservationStatus.rejected,
+                      newSpaceStatus: SpaceStatus.available,
+                    ),
                   );
                 },
               ),
             ],
-            // Add more actions like "Mark as Paid", "Cancel Reservation (Admin)"
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text(
-                "Close",
-                style: TextStyle(color: AppColors.secondaryText),
-              ),
+              child: const Text("Close",
+                  style: TextStyle(color: AppColors.secondaryText)),
             ),
           ],
         );
@@ -466,37 +380,123 @@ class _ManageReservationsAdminScreenState
 
   Widget _detailDialogRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5.0), // Increased padding
+      padding: const EdgeInsets.symmetric(vertical: 5.0),
       child: Row(
-        // Use Row for better alignment
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 2, // Adjust flex for label width
-            child: Text(
-              "$label ",
-              style: AppStyles.bodyText2.copyWith(
-                fontWeight: FontWeight.w600,
-                color: AppColors.secondaryText,
-              ),
-            ),
+            flex: 2,
+            child: Text("$label ",
+                style:
+                    AppStyles.bodyText2.copyWith(fontWeight: FontWeight.w600)),
           ),
           Expanded(
-            flex: 3, // Adjust flex for value width
-            child: Text(
-              value,
-              style: AppStyles.bodyText1.copyWith(color: AppColors.primaryText),
-            ),
+            flex: 3,
+            child: Text(value, style: AppStyles.bodyText1),
           ),
         ],
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _reservationsSubscription?.cancel();
-    super.dispose();
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+          child: CircularProgressIndicator(color: AppColors.appBar));
+    }
+    if (_errorMessage != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline,
+                  color: AppColors.errorColor, size: 48),
+              const SizedBox(height: 16),
+              Text(_errorMessage!,
+                  textAlign: TextAlign.center,
+                  style: AppStyles.titleStyle.copyWith(fontSize: 18)),
+              const SizedBox(height: 20),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.refresh),
+                label: const Text("Retry"),
+                onPressed: _fetchAdminReservations,
+                style:
+                    ElevatedButton.styleFrom(backgroundColor: AppColors.appBar),
+              )
+            ],
+          ),
+        ),
+      );
+    }
+    if (_reservations.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.inbox_outlined,
+                color: AppColors.secondaryText, size: 60),
+            const SizedBox(height: 16),
+            Text('No Reservations Found', style: AppStyles.titleStyle),
+            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32.0),
+              child: Text(
+                'There are no reservations for ${widget.cemeteryName ?? 'this cemetery'} matching the "${_selectedFilterStatus?.displayName ?? 'All Statuses'}" filter.',
+                textAlign: TextAlign.center,
+                style: AppStyles.bodyText2,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _fetchAdminReservations,
+      color: AppColors.appBar,
+      child: ListView.builder(
+        itemCount: _reservations.length,
+        itemBuilder: (context, index) {
+          final res = _reservations[index];
+          final userIdentifier = res.userFullName ??
+              res.userEmail ??
+              'ID: ${res.userId.substring(0, 8)}...';
+          return Card(
+            margin: const EdgeInsets.only(bottom: 10.0),
+            elevation: AppStyles.elevationLow,
+            shape: RoundedRectangleBorder(
+                borderRadius: AppStyles.cardBorderRadius),
+            child: ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              leading: CircleAvatar(
+                backgroundColor: AppColors.appBar.withOpacity(0.1),
+                child: Text((index + 1).toString(),
+                    style: const TextStyle(
+                        color: AppColors.appBar, fontWeight: FontWeight.bold)),
+              ),
+              title: Text('Space: ${res.spaceIdentifier}',
+                  style: AppStyles.cardTitleStyle),
+              subtitle: Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('User: $userIdentifier', style: AppStyles.bodyText2),
+                    Text('Requested: ${_formatDateTime(res.requestedAt)}',
+                        style: AppStyles.caption.copyWith(fontSize: 12)),
+                  ],
+                ),
+              ),
+              isThreeLine: true,
+              trailing: _buildStatusChip(res.status),
+              onTap: () => _showReservationDetailsDialog(res),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -510,119 +510,25 @@ class _ManageReservationsAdminScreenState
             decoration: InputDecoration(
               labelText: 'Filter by Status',
               border: OutlineInputBorder(
-                borderRadius: AppStyles.buttonBorderRadius,
-              ),
+                  borderRadius: AppStyles.buttonBorderRadius),
               isDense: true,
               prefixIcon: const Icon(Icons.filter_list_alt, size: 20),
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 14,
-              ),
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
             ),
             value: _selectedFilterStatus,
             items: _buildFilterOptions(),
             onChanged: (ReservationStatus? newValue) {
               setState(() => _selectedFilterStatus = newValue);
-              _fetchAdminReservations(); // Refetch with the new filter
+              _fetchAdminReservations();
             },
           ),
           const SizedBox(height: 12),
           Expanded(
-            child: _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: AppColors.appBar),
-                  )
-                : _errorMessage != null
-                    ? Center(/* ... error message ... */)
-                    : _reservations.isEmpty
-                        ? Center(/* ... no reservations found message ... */)
-                        : RefreshIndicator(
-                            onRefresh: _fetchAdminReservations,
-                            color: AppColors.appBar,
-                            child: ListView.builder(
-                              itemCount: _reservations.length,
-                              itemBuilder: (context, index) {
-                                final res = _reservations[index];
-                                final userIdentifier = res.userFullName ??
-                                    res.userEmail ??
-                                    res.userId.substring(0, 8);
-                                return Card(
-                                  margin: const EdgeInsets.only(
-                                    bottom: 10.0,
-                                  ), // Increased bottom margin
-                                  elevation: AppStyles.elevationLow,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: AppStyles.cardBorderRadius,
-                                  ),
-                                  child: ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 16,
-                                      vertical: 12,
-                                    ),
-                                    leading: CircleAvatar(
-                                      backgroundColor:
-                                          AppColors.appBar.withOpacity(
-                                        0.1,
-                                      ),
-                                      child: Text(
-                                        (index + 1).toString(),
-                                        style: TextStyle(
-                                          color: AppColors.appBar,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                    ),
-                                    title: Text(
-                                      'Space: ${res.spaceIdentifier} (Ref: ${res.id.substring(0, 6)})', // UPDATED
-                                      style: AppStyles.cardTitleStyle.copyWith(
-                                        color: AppColors.primaryText,
-                                        fontSize: 15,
-                                      ),
-                                    ),
-                                    subtitle: Padding(
-                                      padding: const EdgeInsets.only(top: 4.0),
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(
-                                            'User: $userIdentifier',
-                                            style: AppStyles.bodyText2,
-                                          ),
-                                          Text(
-                                            'Cemetery: ${res.cemeteryName}',
-                                            style: AppStyles.bodyText2,
-                                          ),
-                                          Text(
-                                            'Requested: ${_formatDateTime(res.requestedAt)}',
-                                            style: AppStyles.caption.copyWith(
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    isThreeLine:
-                                        true, // Auto adjusts based on content
-                                    trailing: _buildStatusChip(res.status),
-                                    onTap: () =>
-                                        _showReservationDetailsDialog(res),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
+            child: _buildBody(),
           ),
         ],
       ),
     );
   }
 }
-
-// Keep StringExtension if used elsewhere, or remove if only for this file and not needed
-// extension StringExtension on String {
-//   String capitalizeFirst() {
-//     if (isEmpty) return this;
-//     return "${this[0].toUpperCase()}${substring(1)}";
-//   }
-// }

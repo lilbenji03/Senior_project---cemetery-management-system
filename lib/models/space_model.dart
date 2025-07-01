@@ -19,36 +19,53 @@ enum SpaceStatus {
       case SpaceStatus.booked:
         return 'Booked';
       case SpaceStatus.used:
-        return 'Used'; // Or "Occupied"
+        return 'Used';
       case SpaceStatus.pendingApproval:
         return 'Pending Approval';
       case SpaceStatus.maintenance:
         return 'Under Maintenance';
       case SpaceStatus.unknown:
-      default: // Ensures all cases are handled, including any future additions if not updated here
+      default:
         return 'Unknown Status';
     }
   }
 
-  /// Converts the enum to its string representation for storing in Supabase.
-  /// Uses the enum's 'name' property (e.g., "available", "booked").
-  String toJson() => name;
+  /// Converts the enum to its 'snake_case' string representation for storing in Supabase.
+  /// This is the standard and most reliable format for PostgreSQL.
+  String toJson() {
+    switch (this) {
+      case SpaceStatus.pendingApproval:
+        return 'pending_approval';
+      default:
+        // For simple enums, .name works fine (e.g., 'available', 'booked')
+        return name;
+    }
+  }
 
   /// Creates a [SpaceStatus] from a string (e.g., from Supabase).
-  /// It's case-insensitive and defaults to [unknown] if the string doesn't match.
+  /// This version is robust and handles both 'snake_case' and 'camelCase'.
   static SpaceStatus fromJson(String? statusString) {
     if (statusString == null || statusString.isEmpty) {
       return SpaceStatus.unknown;
     }
-    try {
-      // .byName is case-sensitive, so convert to lowercase for robustness
-      return SpaceStatus.values.byName(statusString.toLowerCase().trim());
-    } catch (_) {
-      // If the string from DB doesn't match any enum value
-      print(
-        "Warning: Unknown SpaceStatus string received from DB: '$statusString'",
-      );
-      return SpaceStatus.unknown;
+    // This switch statement explicitly handles all expected variations.
+    switch (statusString) {
+      case 'available':
+        return SpaceStatus.available;
+      case 'booked':
+        return SpaceStatus.booked;
+      case 'used':
+        return SpaceStatus.used;
+      case 'maintenance':
+        return SpaceStatus.maintenance;
+      // This is the key: it correctly handles both formats from the database.
+      case 'pendingApproval':
+      case 'pending_approval':
+        return SpaceStatus.pendingApproval;
+      default:
+        print(
+            "Warning: Unknown SpaceStatus string received from DB: '$statusString'");
+        return SpaceStatus.unknown;
     }
   }
 }
@@ -59,8 +76,7 @@ enum SpaceStatus {
 class CemeterySpace {
   /// Primary Key from the 'cemetery_spaces' table in Supabase (typically a UUID).
   /// Essential for uniquely identifying the record for updates/deletes.
-  final String
-      id; // Renamed from databaseId for convention (matches Supabase 'id' column)
+  final String id;
 
   /// User-facing identifier for the space within a specific cemetery (e.g., "LA01", "A-102").
   /// This comes from your 'space_identifier' column in Supabase.
@@ -102,33 +118,12 @@ class CemeterySpace {
 
   /// Factory constructor to create a [CemeterySpace] instance from a JSON map (e.g., data from Supabase).
   factory CemeterySpace.fromJson(Map<String, dynamic> json) {
-    // Basic validation for required fields from the database
-    if (json['id'] == null) {
-      throw FormatException(
-        "Required field 'id' is missing in CemeterySpace JSON: $json",
-      );
-    }
-    if (json['cemetery_id'] == null) {
-      throw FormatException(
-        "Required field 'cemetery_id' is missing in CemeterySpace JSON: $json",
-      );
-    }
-    if (json['space_identifier'] == null) {
-      // Depending on requirements, 'space_identifier' might also be critical.
-      // For now, providing a fallback but logging a warning.
-      print(
-        "Warning: 'space_identifier' is missing in CemeterySpace JSON, using fallback: $json",
-      );
-    }
-
     return CemeterySpace(
       id: json['id'] as String,
-      spaceIdentifier:
-          json['space_identifier'] as String? ?? 'N/A', // User-visible ID
+      spaceIdentifier: json['space_identifier'] as String? ?? 'N/A',
       cemeteryId: json['cemetery_id'] as String,
       status: SpaceStatus.fromJson(
-        json['status'] as String?,
-      ), // Use the helper for safer parsing
+          json['status'] as String?), // Use the robust helper
       plotType: json['plot_type'] as String?,
       dimensions: json['dimensions'] as String?,
       notes: json['notes'] as String?,
@@ -142,30 +137,24 @@ class CemeterySpace {
   }
 
   /// Method to convert a [CemeterySpace] instance to a JSON map.
-  /// Useful for sending data to Supabase (e.g., for creating or updating spaces).
-  /// Only include fields that are intended to be written/updated by the client.
   Map<String, dynamic> toJson() {
     return {
-      // 'id': id, // Typically not sent when creating, and not updated.
       'space_identifier': spaceIdentifier,
-      'cemetery_id': cemeteryId, // Required when creating a new space.
-      'status': status.toJson(), // Use the helper to get the string value
+      'cemetery_id': cemeteryId,
+      'status': status.toJson(), // Use the robust helper
       if (plotType != null) 'plot_type': plotType,
       if (dimensions != null) 'dimensions': dimensions,
       if (notes != null) 'notes': notes,
-      // 'created_at' and 'updated_at' are usually handled by the database (e.g., DEFAULT NOW()).
     };
   }
 
   /// Creates a new [CemeterySpace] instance with updated values.
-  /// Useful for immutable state updates.
   CemeterySpace copyWith({
     String? id,
     String? spaceIdentifier,
     String? cemeteryId,
     SpaceStatus? status,
-    String?
-        plotType, // Use ValueGetter<String?>? for nullable fields if you need to set them to null
+    String? plotType,
     String? dimensions,
     String? notes,
     DateTime? createdAt,
@@ -184,8 +173,6 @@ class CemeterySpace {
     );
   }
 
-  /// Override '==' and 'hashCode' for proper object comparison,
-  /// especially if instances are stored in [Set]s or used as keys in [Map]s.
   @override
   bool operator ==(Object other) {
     if (identical(this, other)) return true;
@@ -214,13 +201,8 @@ class CemeterySpace {
         updatedAt,
       );
 
-  /// Provides a string representation of the [CemeterySpace] instance, useful for debugging.
   @override
   String toString() {
-    return 'CemeterySpace(id: $id, spaceIdentifier: $spaceIdentifier, cemeteryId: $cemeteryId, status: $status, plotType: $plotType, dimensions: $dimensions, notes: $notes, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'CemeterySpace(id: $id, identifier: $spaceIdentifier, status: $status)';
   }
 }
-
-// Ensure any sample data functions are removed from this model file.
-// If needed for testing or UI prototyping before backend integration,
-// place them in a dedicated `dev_data.dart` or similar, or generate them in widget state.

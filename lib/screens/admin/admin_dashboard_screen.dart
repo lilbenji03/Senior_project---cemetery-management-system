@@ -2,17 +2,17 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:supabase/supabase.dart'; // ✅ Needed for .eq() and other query methods
 import '../../constants/app_colors.dart';
 import '../../constants/app_styles.dart';
 import '../../models/user_profile_model.dart';
 import '../../services/auth_service.dart';
+
+import 'admin_overview_screen.dart';
 import 'manage_reports_admin_screen.dart';
 import 'manage_reservations_admin_screen.dart';
 import 'manage_spaces_admin_screen.dart';
-import 'widgets/admin_stat_card.dart';
 
-// A helper class to organize page data for clean code.
+// Helper class for page data
 class _AdminPage {
   final String title;
   final IconData icon;
@@ -42,46 +42,34 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   bool _isScreenLoading = true;
   bool _hasError = false;
   String _errorMessage = '';
-  String _contextSubtitle = '';
-  String? _managedCemeteryId;
-  String? _managedCemeteryName;
-  Map<String, String?> _dashboardStats = {
-    'Pending Approval': null,
-    'Completed Reservations': null,
-    'Available Spaces': null,
-    'Rejected Bookings': null,
-  };
+
+  // These will now be set definitively for the manager
+  String _managedCemeteryId = '';
+  String _managedCemeteryName = '';
 
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    _loadManagerData();
   }
 
-  Future<void> _loadInitialData() async {
+  // SIMPLIFIED: This method now only handles the logic for a cemetery manager.
+  Future<void> _loadManagerData() async {
     if (!mounted) return;
     setState(() => _isScreenLoading = true);
+
+    // We assume the user profile role is 'cemetery_manager' to reach this screen.
     try {
-      if (widget.userProfile.role == 'cemetery_manager') {
-        final response = await Supabase.instance.client
-            .from('cemeteries')
-            .select('id, name')
-            .eq('manager_user_id', widget.userProfile.id)
-            .maybeSingle();
+      final response = await Supabase.instance.client
+          .from('cemeteries')
+          .select('id, name')
+          .eq('manager_user_id', widget.userProfile.id)
+          .single(); // Use .single() to throw an error if not exactly one is found
 
-        if (response == null) {
-          throw 'You are not assigned to manage a specific cemetery. Please contact the system administrator.';
-        }
+      _managedCemeteryId = response['id'] as String;
+      _managedCemeteryName = response['name'] as String;
 
-        _managedCemeteryId = response['id'] as String?;
-        _managedCemeteryName = response['name'] as String?;
-        _contextSubtitle = _managedCemeteryName ?? 'Manager';
-      } else if (widget.userProfile.role == 'system_super_admin') {
-        _contextSubtitle = 'System Overview';
-      }
-
-      _setupAdminPages();
-      await _fetchDashboardStats();
+      _setupManagerPages();
 
       if (mounted) setState(() => _isScreenLoading = false);
     } catch (e) {
@@ -89,154 +77,63 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
         setState(() {
           _isScreenLoading = false;
           _hasError = true;
-          _errorMessage = e.toString();
+          // Provide a much clearer error message for this specific case.
+          _errorMessage =
+              'Failed to load your assigned cemetery. Please ensure your account is correctly configured by a system administrator.';
         });
       }
     }
   }
 
-  Future<void> _fetchDashboardStats() async {
-    try {
-      // Start queries with .select() to get a PostgrestFilterBuilder, which has the .eq() method.
-      var reservationsQuery =
-          Supabase.instance.client.from('reservations').select();
-      var spacesQuery =
-          Supabase.instance.client.from('cemetery_spaces').select();
-
-      // Conditionally apply the cemetery filter. This works because .eq() returns a new PostgrestFilterBuilder.
-      if (_managedCemeteryId != null) {
-        reservationsQuery =
-            reservationsQuery.eq('cemetery_id', _managedCemeteryId!);
-        spacesQuery = spacesQuery.eq('cemetery_id', _managedCemeteryId!);
-      }
-
-      // Execute all count queries in parallel.
-      // Each builder already contains the optional cemetery_id filter.
-      final results = await Future.wait([
-        reservationsQuery
-            .eq('status', 'pending_approval')
-            .count(CountOption.exact),
-        reservationsQuery.eq('status', 'completed').count(CountOption.exact),
-        spacesQuery.eq('status', 'available').count(CountOption.exact),
-        reservationsQuery.eq('status', 'rejected').count(CountOption.exact),
-      ]);
-
-      if (mounted) {
-        setState(() {
-          // The result of a .count() query is a PostgrestResponse. Access the .count property.
-          _dashboardStats = {
-            'Pending Approval': results[0].count.toString(),
-            'Completed Reservations': results[1].count.toString(),
-            'Available Spaces': results[2].count.toString(),
-            'Rejected Bookings': results[3].count.toString(),
-          };
-        });
-      }
-    } catch (e) {
-      print("Error fetching dashboard stats: $e");
-      if (mounted) {
-        setState(() {
-          _dashboardStats = {
-            'Pending Approval': '!',
-            'Completed Reservations': '!',
-            'Available Spaces': '!',
-            'Rejected Bookings': '!',
-          };
-        });
-      }
-    }
-  }
-
-  void _setupAdminPages() {
-    final pages = <_AdminPage>[];
-    final isSuperAdmin = widget.userProfile.role == 'system_super_admin';
-    final isManager = widget.userProfile.role == 'cemetery_manager';
-    final canManage = isSuperAdmin || (isManager && _managedCemeteryId != null);
-
-    if (canManage) {
-      pages.add(_AdminPage(
-        title: 'Reservations',
-        icon: Icons.calendar_today_outlined,
-        activeIcon: Icons.calendar_today,
-        page: ManageReservationsAdminScreen(
-          userProfile:
-              widget.userProfile, // FIX: Added missing required parameter
-          cemeteryId: _managedCemeteryId,
-          cemeteryName: _managedCemeteryName,
+  // SIMPLIFIED: This method no longer needs checks for different roles.
+  void _setupManagerPages() {
+    setState(() {
+      _pages = [
+        _AdminPage(
+          title: 'Overview',
+          icon: Icons.dashboard_outlined,
+          activeIcon: Icons.dashboard_rounded,
+          page: AdminOverviewScreen(
+            userProfile: widget.userProfile,
+            cemeteryId: _managedCemeteryId,
+            cemeteryName: _managedCemeteryName,
+            onNavigateToTab: _onItemTapped,
+          ),
         ),
-      ));
-      pages.add(_AdminPage(
-        title: 'Spaces',
-        icon: Icons.grid_view_outlined,
-        activeIcon: Icons.grid_view_rounded,
-        page: ManageSpacesAdminScreen(
-          cemeteryId: _managedCemeteryId,
-          cemeteryName: _managedCemeteryName,
+        _AdminPage(
+          title: 'Reservations',
+          icon: Icons.calendar_today_outlined,
+          activeIcon: Icons.calendar_today,
+          page: ManageReservationsAdminScreen(
+            userProfile: widget.userProfile,
+            cemeteryId: _managedCemeteryId,
+            cemeteryName: _managedCemeteryName,
+          ),
         ),
-      ));
-      pages.add(_AdminPage(
-        title: 'Reports',
-        icon: Icons.bar_chart_outlined,
-        activeIcon: Icons.bar_chart_rounded,
-        page: ManageReportsAdminScreen(
-          cemeteryId: _managedCemeteryId,
-          cemeteryName: _managedCemeteryName,
-          isSuperAdmin: isSuperAdmin,
+        _AdminPage(
+          title: 'Spaces',
+          icon: Icons.grid_view_outlined,
+          activeIcon: Icons.grid_view_rounded,
+          page: ManageSpacesAdminScreen(
+            cemeteryId: _managedCemeteryId,
+            cemeteryName: _managedCemeteryName,
+          ),
         ),
-      ));
-    }
-
-    setState(() => _pages = pages);
+        _AdminPage(
+          title: 'Reports',
+          icon: Icons.bar_chart_outlined,
+          activeIcon: Icons.bar_chart_rounded,
+          page: ManageReportsAdminScreen(
+            cemeteryId: _managedCemeteryId,
+            cemeteryName: _managedCemeteryName,
+          ),
+        ),
+      ];
+    });
   }
 
   void _onItemTapped(int index) {
     if (index < _pages.length) setState(() => _selectedIndex = index);
-  }
-
-  Widget _buildDashboardHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      color: AppColors.background,
-      child: GridView.count(
-        crossAxisCount: 2,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.9,
-        children: [
-          AdminStatCard(
-            iconData: Icons.hourglass_top_rounded,
-            label: 'Pending Approval',
-            value: _dashboardStats['Pending Approval'] ?? '–',
-            iconColor: Colors.orange.shade700,
-            onTap: () => _onItemTapped(0),
-          ),
-          AdminStatCard(
-            iconData: Icons.task_alt_rounded,
-            label: 'Completed',
-            value: _dashboardStats['Completed Reservations'] ?? '–',
-            iconColor: AppColors.statusCompleted,
-          ),
-          AdminStatCard(
-            iconData: Icons.event_available_rounded,
-            label: 'Available Spaces',
-            value: _dashboardStats['Available Spaces'] ?? '–',
-            iconColor: AppColors.activeTab,
-            onTap: () {
-              final index = _pages.indexWhere((p) => p.title == 'Spaces');
-              if (index != -1) _onItemTapped(index);
-            },
-          ),
-          AdminStatCard(
-            iconData: Icons.thumb_down_outlined,
-            label: 'Rejected',
-            value: _dashboardStats['Rejected Bookings'] ?? '–',
-            iconColor: AppColors.errorColor,
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -247,14 +144,18 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   }
 
   Scaffold _buildMainDashboard() {
+    final currentPageTitle = _pages[_selectedIndex].title;
+    // The subtitle is now always the managed cemetery name.
+    final subtitle = _managedCemeteryName;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Admin Dashboard', style: AppStyles.appBarTitleStyle),
-            Text(_contextSubtitle,
+            Text(currentPageTitle, style: AppStyles.appBarTitleStyle),
+            Text(subtitle,
                 style: AppStyles.caption
                     .copyWith(color: AppColors.appBarTitle.withOpacity(0.8))),
           ],
@@ -270,38 +171,26 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Column(
-        children: [
-          _buildDashboardHeader(),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFE0E0E0)),
-          Expanded(
-            child: _pages.isEmpty
-                ? const Center(child: Text("No management modules available."))
-                : IndexedStack(
-                    index: _selectedIndex,
-                    children: _pages.map((p) => p.page).toList(),
-                  ),
-          ),
-        ],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages.map((p) => p.page).toList(),
       ),
-      bottomNavigationBar: _pages.length > 1
-          ? BottomNavigationBar(
-              items: _pages
-                  .map((page) => BottomNavigationBarItem(
-                        icon: Icon(page.icon),
-                        activeIcon: Icon(page.activeIcon),
-                        label: page.title,
-                      ))
-                  .toList(),
-              currentIndex: _selectedIndex,
-              onTap: _onItemTapped,
-              type: BottomNavigationBarType.fixed,
-              backgroundColor: AppColors.cardBackground,
-              selectedItemColor: AppColors.activeTab,
-              unselectedItemColor: AppColors.inactiveTab,
-              elevation: 8.0,
-            )
-          : null,
+      bottomNavigationBar: BottomNavigationBar(
+        items: _pages
+            .map((page) => BottomNavigationBarItem(
+                  icon: Icon(page.icon),
+                  activeIcon: Icon(page.activeIcon),
+                  label: page.title,
+                ))
+            .toList(),
+        currentIndex: _selectedIndex,
+        onTap: _onItemTapped,
+        type: BottomNavigationBarType.fixed,
+        backgroundColor: AppColors.cardBackground,
+        selectedItemColor: AppColors.activeTab,
+        unselectedItemColor: AppColors.inactiveTab,
+        elevation: 8.0,
+      ),
     );
   }
 
@@ -309,7 +198,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Loading Admin Portal...',
+        title: const Text('Loading Manager Portal...',
             style: AppStyles.appBarTitleStyle),
         backgroundColor: AppColors.appBar,
         elevation: 0,

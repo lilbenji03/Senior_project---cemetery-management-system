@@ -175,12 +175,6 @@ class _ReportingPageState extends State<ReportingPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: Text('File a Report',
-            style: AppStyles.appBarTitleStyle.copyWith(fontSize: 22)),
-        backgroundColor: AppColors.appBar,
-        foregroundColor: AppColors.appBarTitle,
-      ),
       body: SafeArea(
         child: Padding(
           padding: AppStyles.pagePadding,

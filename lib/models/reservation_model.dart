@@ -55,7 +55,10 @@ enum ReservationStatus {
   cancelledByAdmin, // Cancelled by admin
   unknown,
   paymentPending,
-  cancelled; // Fallback for unexpected values from DB
+  cancelled,
+  pending_Approval,
+  cancelled_By_Admin,
+  pending; // Fallback for unexpected values from DB
 
   String get displayName {
     switch (this) {

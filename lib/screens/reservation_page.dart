@@ -1,6 +1,7 @@
 // lib/screens/reservation_page.dart
 
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -325,6 +326,7 @@ class _ReservationPageState extends State<ReservationPage> {
     return reservation.estimatedCost + servicesCost;
   }
 
+  // --- MODIFIED: This function now orchestrates the payment simulation flow ---
   Future<void> _finalizePayment(Reservation reservation) async {
     if (_selectedBurialDate == null) {
       if (mounted) {
@@ -339,6 +341,37 @@ class _ReservationPageState extends State<ReservationPage> {
 
     if (mounted) setState(() => _isFinalizing = true);
 
+    // Show the payment simulation dialog and wait for its result
+    final paymentSuccessful = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false, // User can't dismiss by tapping outside
+      builder: (context) => PaymentSimulationDialog(
+        paymentMethod: _selectedPaymentMethod ?? PaymentMethod.mpesa,
+        totalCost: _calculateTotalCost(reservation),
+      ),
+    );
+
+    // Handle the result from the dialog
+    if (paymentSuccessful == true) {
+      // If payment was "successful", update the reservation in the database
+      await _completeReservationInDatabase(reservation);
+    } else {
+      // If payment failed or was cancelled by the user
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment was cancelled or failed. Please try again.'),
+            backgroundColor: AppColors.errorColor,
+          ),
+        );
+      }
+    }
+
+    if (mounted) setState(() => _isFinalizing = false);
+  }
+
+  // --- NEW: This function contains the database update logic ---
+  Future<void> _completeReservationInDatabase(Reservation reservation) async {
     try {
       final totalCost = _calculateTotalCost(reservation);
       final userId = supabase.auth.currentUser?.id;
@@ -359,9 +392,6 @@ class _ReservationPageState extends State<ReservationPage> {
         'selected_services': servicesData,
       };
 
-      print(
-          "Attempting to update reservation ${reservation.id} with data: $updateData");
-
       await supabase
           .from('reservations')
           .update(updateData)
@@ -369,27 +399,25 @@ class _ReservationPageState extends State<ReservationPage> {
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-                'Booking completed successfully! Total: KES ${totalCost.toStringAsFixed(2)}'),
+          const SnackBar(
+            content: Text('Booking details saved. Reservation is complete!'),
             backgroundColor: AppColors.spotsAvailable,
           ),
         );
+        // Refresh the list and close the booking completion form
         _fetchReservationsFromSupabase();
         setState(() => _completingReservationId = null);
       }
     } catch (e) {
-      print("Error finalizing payment: $e");
+      print("Error finalizing booking in database: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error finalizing booking: $e'),
+            content: Text('Error saving booking details: $e'),
             backgroundColor: AppColors.errorColor,
           ),
         );
       }
-    } finally {
-      if (mounted) setState(() => _isFinalizing = false);
     }
   }
 
@@ -528,7 +556,6 @@ class _ReservationPageState extends State<ReservationPage> {
               const SizedBox(width: 10),
               Expanded(
                 child: ElevatedButton.icon(
-                  // --- FIX APPLIED HERE ---
                   icon: _isFinalizing
                       ? Container(
                           width: 20,
@@ -539,8 +566,7 @@ class _ReservationPageState extends State<ReservationPage> {
                             strokeWidth: 2,
                           ),
                         )
-                      : const Icon(Icons.verified_outlined,
-                          size: 20), // Correct icon name
+                      : const Icon(Icons.verified_user_outlined, size: 20),
                   label:
                       Text(_isFinalizing ? 'PROCESSING...' : 'CONFIRM & PAY'),
                   style: ElevatedButton.styleFrom(
@@ -919,6 +945,150 @@ class _ReservationPageState extends State<ReservationPage> {
                           ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// --- NEW: Helper widget to simulate the payment process ---
+enum _PaymentStatus { processing, success, failure, cancelled }
+
+class PaymentSimulationDialog extends StatefulWidget {
+  final PaymentMethod paymentMethod;
+  final double totalCost;
+
+  const PaymentSimulationDialog({
+    super.key,
+    required this.paymentMethod,
+    required this.totalCost,
+  });
+
+  @override
+  State<PaymentSimulationDialog> createState() =>
+      _PaymentSimulationDialogState();
+}
+
+class _PaymentSimulationDialogState extends State<PaymentSimulationDialog> {
+  _PaymentStatus _status = _PaymentStatus.processing;
+  Timer? _simulationTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startSimulation();
+  }
+
+  @override
+  void dispose() {
+    _simulationTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startSimulation() {
+    // Simulate network delay and processing time
+    _simulationTimer = Timer(const Duration(seconds: 4), () {
+      if (mounted) {
+        // For this demo, we'll always simulate success.
+        // You could use `Random().nextBool()` to simulate random failures.
+        setState(() {
+          _status = _PaymentStatus.success;
+        });
+      }
+    });
+  }
+
+  String get _processingMessage {
+    switch (widget.paymentMethod) {
+      case PaymentMethod.mpesa:
+        return 'An STK push has been sent to your phone. Please enter your M-Pesa PIN to authorize the payment of KES ${widget.totalCost.toStringAsFixed(2)}.';
+      case PaymentMethod.card:
+        return 'Redirecting to secure card payment gateway... Please wait.';
+      case PaymentMethod.bank:
+        return 'Finalizing bank transfer details. Please follow the instructions shown.';
+    }
+  }
+
+  Widget _buildProcessingView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      key: const ValueKey('processing'),
+      children: [
+        const SizedBox(
+            width: 50,
+            height: 50,
+            child: CircularProgressIndicator(color: AppColors.appBar)),
+        const SizedBox(height: 24),
+        Text(
+          'Processing Payment...',
+          style: AppStyles.titleStyle.copyWith(fontSize: 18),
+        ),
+        const SizedBox(height: 12),
+        Text(
+          _processingMessage,
+          textAlign: TextAlign.center,
+          style: AppStyles.bodyText1,
+        ),
+        const SizedBox(height: 24),
+        TextButton(
+          onPressed: () {
+            _simulationTimer?.cancel();
+            Navigator.of(context).pop(false); // Pop with a "failure" result
+          },
+          child: const Text('Cancel Payment',
+              style: TextStyle(color: AppColors.errorColor)),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSuccessView() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      key: const ValueKey('success'),
+      children: [
+        const Icon(Icons.check_circle_outline_rounded,
+            color: AppColors.spotsAvailable, size: 60),
+        const SizedBox(height: 20),
+        Text(
+          'Payment Successful!',
+          style: AppStyles.titleStyle,
+        ),
+        const SizedBox(height: 12),
+        Text(
+          'Your booking is confirmed. Thank you for your payment of KES ${widget.totalCost.toStringAsFixed(2)}.',
+          textAlign: TextAlign.center,
+          style: AppStyles.bodyText1,
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.appBar,
+            foregroundColor: Colors.white,
+            minimumSize: const Size(120, 40),
+          ),
+          onPressed: () =>
+              Navigator.of(context).pop(true), // Pop with a "success" result
+          child: const Text('Done'),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15.0)),
+      contentPadding: const EdgeInsets.fromLTRB(24, 24, 24, 16),
+      content: AnimatedSwitcher(
+        duration: const Duration(milliseconds: 400),
+        transitionBuilder: (child, animation) {
+          return FadeTransition(opacity: animation, child: child);
+        },
+        child: switch (_status) {
+          _PaymentStatus.processing => _buildProcessingView(),
+          _PaymentStatus.success => _buildSuccessView(),
+          _ => const SizedBox.shrink(),
+        },
       ),
     );
   }
