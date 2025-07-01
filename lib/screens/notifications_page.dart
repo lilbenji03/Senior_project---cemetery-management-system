@@ -18,13 +18,14 @@ class _NotificationsPageState extends State<NotificationsPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   StreamSubscription? _notificationSubscription;
   List<NotificationModel> _notifications = [];
-  bool _isLoading = true;
+  bool _isLoading = true; // Start with loading true for the initial fetch
   String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _fetchNotifications();
+    // Fetch initial data and show a loader. Subsequent updates will be smooth.
+    _fetchNotifications(isInitialLoad: true);
   }
 
   @override
@@ -33,12 +34,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
     super.dispose();
   }
 
-  Future<void> _fetchNotifications() async {
+  // --- START OF FIX ---
+
+  /// Fetches notifications from Supabase.
+  ///
+  /// Set [isInitialLoad] to true to show the centered loading indicator.
+  /// Subsequent calls (e.g., from stream updates or pull-to-refresh) can
+  /// omit this to provide a smoother update without a full-screen loader.
+  Future<void> _fetchNotifications({bool isInitialLoad = false}) async {
     if (!mounted) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+
+    // Only show the full-screen loader on the initial load.
+    if (isInitialLoad) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
       final userId = _supabase.auth.currentUser?.id;
@@ -53,47 +65,87 @@ class _NotificationsPageState extends State<NotificationsPage> {
           .order('created_at', ascending: false);
 
       if (mounted) {
+        // Subscribe to real-time changes only once after the initial fetch succeeds.
+        if (isInitialLoad) {
+          _subscribeToChanges(userId);
+        }
+
         setState(() {
           _notifications =
               response.map((data) => NotificationModel.fromJson(data)).toList();
-          _isLoading = false;
+          // If it was an initial load, we can now turn off the loader.
+          if (isInitialLoad) {
+            _isLoading = false;
+          }
         });
-        _subscribeToChanges(userId);
       }
     } catch (e) {
       if (mounted) {
         setState(() {
           _errorMessage = "Failed to load notifications.";
-          _isLoading = false;
+          if (isInitialLoad) {
+            _isLoading = false;
+          }
         });
       }
     }
   }
 
+  /// Subscribes to real-time changes in the user's notifications.
+  ///
+  /// This sets up a stream that listens for any inserts or updates to the
+  /// notifications table for the current user, and then triggers a silent
+  /// refresh of the notification list.
   void _subscribeToChanges(String userId) {
     _notificationSubscription?.cancel();
-    _notificationSubscription =
-        _supabase.from('notifications').stream(primaryKey: ['id']).listen(
-      (data) {
-        if (mounted) {
-          _fetchNotifications();
-        }
-      },
-      onError: (e) => print("Notification stream error: $e"),
-    );
+    _notificationSubscription = _supabase
+        .from('notifications')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', userId) // Important: Filter stream for the current user
+        .listen(
+          (data) {
+            if (mounted) {
+              // Refetch notifications without showing the full-screen loader.
+              // This prevents the "blinking" UI.
+              _fetchNotifications();
+            }
+          },
+          onError: (e) => print("Notification stream error: $e"),
+        );
   }
 
+  /// Marks a notification as read with an optimistic UI update.
   Future<void> _markAsRead(String notificationId) async {
+    // Optimistic UI update for instant feedback. The UI updates immediately
+    // without waiting for the database call to complete.
+    if (mounted) {
+      final index = _notifications.indexWhere((n) => n.id == notificationId);
+      if (index != -1) {
+        setState(() {
+          final oldNotification = _notifications[index];
+          _notifications[index] = NotificationModel(
+            id: oldNotification.id,
+            userId: oldNotification.userId,
+            title: oldNotification.title,
+            body: oldNotification.body,
+            type: oldNotification.type,
+            isRead: true, // The change
+            createdAt: oldNotification.createdAt,
+          );
+        });
+      }
+    }
+
+    // Perform the actual database update in the background.
     try {
       await _supabase
           .from('notifications')
           .update({'is_read': true}).eq('id', notificationId);
     } catch (e) {
       print("Error marking notification as read: $e");
+      // Optional: Revert the optimistic UI update on failure
     }
   }
-
-  // --- START OF FIX ---
 
   // Helper function to get the icon data based on type
   IconData _getIconDataForType(String type) {
@@ -172,25 +224,18 @@ class _NotificationsPageState extends State<NotificationsPage> {
         itemBuilder: (context, index) {
           final notification = _notifications[index];
           final bool isUnread = !notification.isRead;
-
-          // --- START OF FIX ---
-          // Get the icon and color using our new helper methods
           final iconData = _getIconDataForType(notification.type);
           final iconColor = _getColorForType(notification.type);
-          // --- END OF FIX ---
 
           return Card(
             margin: const EdgeInsets.only(bottom: 12.0),
             color: isUnread ? AppColors.cardBackground : AppColors.background,
             elevation: isUnread ? AppStyles.elevationLow : 0,
             child: ListTile(
-              // --- START OF FIX ---
               leading: CircleAvatar(
                 backgroundColor: iconColor.withOpacity(0.1),
-                child: Icon(iconData,
-                    color: iconColor), // Use the determined color
+                child: Icon(iconData, color: iconColor),
               ),
-              // --- END OF FIX ---
               title: Text(
                 notification.title,
                 style: AppStyles.bodyText1.copyWith(

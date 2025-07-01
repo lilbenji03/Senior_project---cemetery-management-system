@@ -33,8 +33,7 @@ class Cemetery {
       // For imageUrl, if storing path from Supabase Storage:
       // imageUrl: json['image_url'] != null ? supabase.storage.from('your_bucket_name').getPublicUrl(json['image_url']).data : 'https://via.placeholder.com/400x200.png?text=No+Image',
       // For now, assuming it's a direct URL or you handle storage URL generation elsewhere
-      imageUrl:
-          json['image_url'] as String? ??
+      imageUrl: json['image_url'] as String? ??
           'https://via.placeholder.com/400x200.png?text=No+Image',
       locationDescription: json['location_description'] as String?,
       latitude: (json['latitude'] as num?)?.toDouble(),

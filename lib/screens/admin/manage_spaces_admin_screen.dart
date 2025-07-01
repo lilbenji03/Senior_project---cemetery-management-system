@@ -1,4 +1,3 @@
-// lib/screens/admin/manage_spaces_admin_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -36,7 +35,6 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
       ),
     ];
     items.addAll(
-      // FIXED: Exclude 'unknown' from the filter dropdown
       SpaceStatus.values
           .where((status) => status != SpaceStatus.unknown)
           .map(
@@ -73,23 +71,40 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
 
   void _handleCemeteryChange() {
     _spacesSubscription?.cancel();
+    _spacesSubscription = null; // Explicitly nullify
+
     if (widget.cemeteryId != null) {
-      _fetchCemeterySpaces();
+      _fetchAndSubscribe();
     } else {
       setState(() {
         _isLoading = false;
-        _errorMessage = null;
+        _errorMessage = "No cemetery assigned to this manager account.";
         _spaces = [];
       });
     }
   }
 
-  Future<void> _fetchCemeterySpaces() async {
+  Future<void> _fetchAndSubscribe() async {
+    // Fetch with a loading indicator for the initial load.
+    await _fetchCemeterySpaces(showLoadingIndicator: true);
+
+    // Subscribe to changes if the initial fetch was successful.
+    if (mounted && _errorMessage == null) {
+      _subscribeToSpaceChanges();
+    }
+  }
+
+  // --- THIS IS THE CORRECTED METHOD ---
+  Future<void> _fetchCemeterySpaces({bool showLoadingIndicator = true}) async {
     if (!mounted || widget.cemeteryId == null) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+
+    if (showLoadingIndicator) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
+
     try {
       var query = Supabase.instance.client
           .from('cemetery_spaces')
@@ -97,21 +112,21 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
           .eq('cemetery_id', widget.cemeteryId!);
 
       if (_filterStatus != null) {
-        query = query.eq('status', _filterStatus!.toJson());
+        // Correctly use .name for enums matching PostgreSQL ENUM labels
+        query = query.eq('status', _filterStatus!.name);
       }
       final response = await query.order('space_identifier', ascending: true);
       if (mounted) {
         setState(() {
           _spaces =
               response.map((data) => CemeterySpace.fromJson(data)).toList();
-          _isLoading = false;
+          _isLoading = false; // Always turn off loading after a fetch.
         });
-        _subscribeToSpaceChanges();
       }
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = "Failed to load spaces. Check RLS Policies.";
+          _errorMessage = "Failed to load spaces: ${e.toString()}";
           _isLoading = false;
           _spaces = [];
         });
@@ -121,17 +136,22 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
 
   void _subscribeToSpaceChanges() {
     if (widget.cemeteryId == null) return;
-    _spacesSubscription?.cancel();
+    _spacesSubscription?.cancel(); // Ensure no duplicate listeners
+
     _spacesSubscription = Supabase.instance.client
         .from('cemetery_spaces')
-        .stream(primaryKey: ['id']).listen(
-      (data) {
-        if (mounted) {
-          _fetchCemeterySpaces();
-        }
-      },
-      onError: (e) => print("Spaces stream error: $e"),
-    );
+        .stream(primaryKey: ['id'])
+        // OPTIMIZATION: Only listen to changes for the current cemetery
+        .eq('cemetery_id', widget.cemeteryId!)
+        .listen(
+          (data) {
+            if (mounted) {
+              // Fetch silently in the background without a loading spinner
+              _fetchCemeterySpaces(showLoadingIndicator: false);
+            }
+          },
+          onError: (e) => print("Spaces stream error: $e"),
+        );
   }
 
   Future<void> _updateSpaceStatus(String spaceId, SpaceStatus newStatus) async {
@@ -139,7 +159,8 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
     try {
       await Supabase.instance.client
           .from('cemetery_spaces')
-          .update({'status': newStatus.toJson()}).eq('id', spaceId);
+          // Correctly use .name for enums matching PostgreSQL ENUM labels
+          .update({'status': newStatus.name}).eq('id', spaceId);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -150,11 +171,11 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
           ),
         );
       }
-    } catch (e) {
+    } on PostgrestException catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: Update failed. Check RLS policies.'),
+            content: Text('Error: ${e.message}'),
             backgroundColor: AppColors.errorColor,
             behavior: SnackBarBehavior.floating,
           ),
@@ -181,7 +202,6 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
   }
 
   void _showSpaceActionsDialog(CemeterySpace space) {
-    // FIXED: A manager should not be able to set a space to 'unknown'.
     List<SpaceStatus> possibleNewStatuses =
         SpaceStatus.values.where((s) => s != SpaceStatus.unknown).toList();
 
@@ -295,7 +315,7 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
               ElevatedButton.icon(
                 icon: const Icon(Icons.refresh),
                 label: const Text("Retry"),
-                onPressed: _fetchCemeterySpaces,
+                onPressed: _fetchAndSubscribe,
                 style:
                     ElevatedButton.styleFrom(backgroundColor: AppColors.appBar),
               )
@@ -327,7 +347,7 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
       );
     }
     return RefreshIndicator(
-      onRefresh: _fetchCemeterySpaces,
+      onRefresh: () => _fetchCemeterySpaces(showLoadingIndicator: false),
       color: AppColors.appBar,
       child: GridView.builder(
         padding: const EdgeInsets.only(top: 8.0, bottom: 70),
@@ -412,7 +432,8 @@ class _ManageSpacesAdminScreenState extends State<ManageSpacesAdminScreen> {
               items: _buildFilterOptions(),
               onChanged: (SpaceStatus? newValue) {
                 setState(() => _filterStatus = newValue);
-                _fetchCemeterySpaces();
+                // Changing the filter requires a full reload with a spinner.
+                _fetchCemeterySpaces(showLoadingIndicator: true);
               },
             ),
           const SizedBox(height: 12),

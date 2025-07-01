@@ -32,11 +32,9 @@ class UserProfile {
       phoneNumber: json['phone_number'] as String?,
       profilePhotoUrl: json['profile_photo_url'] as String?,
       role: json['role'] as String? ?? 'user',
-      createdAt:
-          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ??
           DateTime.now(),
-      updatedAt:
-          DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ??
           DateTime.now(),
     );
   }

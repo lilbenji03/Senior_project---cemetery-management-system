@@ -30,19 +30,19 @@ class AppColors {
 
   static const Color errorColor = Colors.redAccent;
 
-  // --- CORRECTED STATUS COLORS ---
-  // Assign actual Color values and make them const
+  // --- STATUS COLORS ---
   static const Color statusCompleted = Color(
     0xFF0D47A1,
-  ); // Example: Dark Blue (like your admin app's completed)
-  static const Color statusPending =
-      Colors.orange; // Example: Orange (like your admin app's pending)
+  ); // Example: Dark Blue
+  static const Color statusPending = Colors.orange; // Example: Orange
   static const Color statusApproved = Color(
     0xFF2E7D32,
-  ); // Example: Your primary green (similar to spotsAvailable)
+  ); // Example: Your primary green
   static const Color statusRejected = Colors.red; // Example: Red
   static const Color statusExpired = Colors.grey;
 
-  static var statusUsed; // Example: Grey
-  // -----------------------------
+  // *** THIS IS THE CORRECTED LINE ***
+  // For 'Occupied' spaces or things that are currently in use.
+  static const Color statusUsed = Color(0xFF1E88E5); // Example: A strong blue
+  // ---------------------------------
 }

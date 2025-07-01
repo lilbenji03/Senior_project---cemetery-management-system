@@ -1,4 +1,3 @@
-// lib/screens/admin/manage_reservations_admin_screen.dart
 import 'dart:async';
 import 'package:cmc/models/admin_reservation_model.dart';
 import 'package:cmc/models/user_profile_model.dart';
@@ -78,12 +77,14 @@ class _ManageReservationsAdminScreenState
     super.dispose();
   }
 
+  /// Handles logic when the cemetery ID changes, acting as the main coordinator.
   void _handleCemeteryChange() {
     _reservationsSubscription?.cancel();
     _reservationsSubscription = null;
 
     if (widget.cemeteryId != null) {
-      _fetchAdminReservations();
+      // Perform the initial data load and then subscribe to future changes.
+      _fetchAndSubscribe();
     } else {
       setState(() {
         _isLoading = false;
@@ -93,26 +94,42 @@ class _ManageReservationsAdminScreenState
     }
   }
 
-  // --- THIS IS THE CORRECTED METHOD ---
-  Future<void> _fetchAdminReservations() async {
+  /// Helper to coordinate the initial fetch (with a loader) and then subscribe to real-time updates.
+  Future<void> _fetchAndSubscribe() async {
+    // Fetch with a loading indicator.
+    await _fetchAdminReservations(showLoadingIndicator: true);
+
+    // After the initial fetch, subscribe to real-time updates if we're still on the screen
+    // and the fetch was successful.
+    if (mounted && _errorMessage == null) {
+      _subscribeToReservationChanges();
+    }
+  }
+
+  /// --- THIS IS THE CORRECTED METHOD ---
+  /// Fetches reservation data from the database.
+  /// The [showLoadingIndicator] flag prevents the UI from flashing a loading
+  /// spinner during background refreshes triggered by real-time events.
+  Future<void> _fetchAdminReservations(
+      {bool showLoadingIndicator = true}) async {
     if (!mounted || widget.cemeteryId == null) return;
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
+
+    if (showLoadingIndicator) {
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
+    }
 
     try {
-      // Query the simple, secure VIEW instead of the complex table join.
-      // The RLS policy on the VIEW handles all the security.
       var query = Supabase.instance.client
-          .from('detailed_reservations') // <-- Query the VIEW
-          .select('*'); // <-- Select all columns from the VIEW
-
-      // Apply filters directly to the query on the VIEW
-      query = query.eq('cemetery_id', widget.cemeteryId!);
+          .from('detailed_reservations')
+          .select('*')
+          // FIX: Removed the erroneous space between 'widget.c' and 'cemeteryId'
+          .eq('cemetery_id', widget.cemeteryId!);
 
       if (_selectedFilterStatus != null) {
-        query = query.eq('status', _selectedFilterStatus!.toJson());
+        query = query.eq('status', _selectedFilterStatus!.name);
       }
 
       final response = await query.order('requested_at', ascending: true);
@@ -122,9 +139,11 @@ class _ManageReservationsAdminScreenState
           _reservations = (response as List)
               .map((data) => AdminReservationModel.fromJson(data))
               .toList();
+          // Always set isLoading to false after a fetch completes.
           _isLoading = false;
+          // Clear any previous error on a successful fetch.
+          if (showLoadingIndicator) _errorMessage = null;
         });
-        _subscribeToReservationChanges();
       }
     } on PostgrestException catch (e) {
       if (mounted) {
@@ -145,22 +164,32 @@ class _ManageReservationsAdminScreenState
     }
   }
 
+  /// Subscribes to changes in the 'reservations' table for the current cemetery.
   void _subscribeToReservationChanges() {
+    // Ensure we don't have duplicate subscriptions.
     _reservationsSubscription?.cancel();
-    if (!mounted) return;
+    if (!mounted || widget.cemeteryId == null) return;
 
-    // The stream still listens to the original table for changes
     _reservationsSubscription = Supabase.instance.client
         .from('reservations')
-        .stream(primaryKey: ['id']).listen(
-      (data) {
-        if (mounted) {
-          // When a change happens, refetch from the VIEW
-          _fetchAdminReservations();
-        }
-      },
-      onError: (e) => print("Reservations Realtime Error: $e"),
-    );
+        .stream(primaryKey: ['id'])
+        // Filter the stream to only get updates for the relevant cemetery.
+        .eq('cemetery_id', widget.cemeteryId!)
+        .listen(
+          (data) {
+            if (mounted) {
+              // When a change happens, refetch silently from the VIEW.
+              // This updates the list without showing a disruptive loading spinner.
+              _fetchAdminReservations(showLoadingIndicator: false);
+            }
+          },
+          onError: (e) {
+            if (mounted) {
+              print("Reservations Realtime Error: $e");
+              // Optionally show a non-blocking error, e.g., a SnackBar.
+            }
+          },
+        );
   }
 
   void _showConfirmationDialog({
@@ -211,8 +240,8 @@ class _ManageReservationsAdminScreenState
     try {
       await Supabase.instance.client.rpc('manage_reservation_status', params: {
         'p_reservation_id': reservationId,
-        'p_new_reservation_status': newReservationStatus.toJson(),
-        'p_new_space_status': newSpaceStatus.toJson()
+        'p_new_reservation_status': newReservationStatus.name,
+        'p_new_space_status': newSpaceStatus.name
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -421,7 +450,8 @@ class _ManageReservationsAdminScreenState
               ElevatedButton.icon(
                 icon: const Icon(Icons.refresh),
                 label: const Text("Retry"),
-                onPressed: _fetchAdminReservations,
+                // On retry, re-fetch and re-subscribe
+                onPressed: _fetchAndSubscribe,
                 style:
                     ElevatedButton.styleFrom(backgroundColor: AppColors.appBar),
               )
@@ -453,7 +483,8 @@ class _ManageReservationsAdminScreenState
       );
     }
     return RefreshIndicator(
-      onRefresh: _fetchAdminReservations,
+      // On pull-to-refresh, fetch without the main spinner, as the indicator is sufficient.
+      onRefresh: () => _fetchAdminReservations(showLoadingIndicator: false),
       color: AppColors.appBar,
       child: ListView.builder(
         itemCount: _reservations.length,
@@ -520,7 +551,8 @@ class _ManageReservationsAdminScreenState
             items: _buildFilterOptions(),
             onChanged: (ReservationStatus? newValue) {
               setState(() => _selectedFilterStatus = newValue);
-              _fetchAdminReservations();
+              // Changing the filter requires a full reload with a loading indicator.
+              _fetchAdminReservations(showLoadingIndicator: true);
             },
           ),
           const SizedBox(height: 12),

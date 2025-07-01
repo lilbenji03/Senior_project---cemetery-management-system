@@ -1087,7 +1087,7 @@ class _PaymentSimulationDialogState extends State<PaymentSimulationDialog> {
         child: switch (_status) {
           _PaymentStatus.processing => _buildProcessingView(),
           _PaymentStatus.success => _buildSuccessView(),
-          _ => const SizedBox.shrink(),
+          _ => const SizedBox.shrink(), // Should not happen
         },
       ),
     );
