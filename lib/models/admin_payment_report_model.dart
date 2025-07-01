@@ -32,14 +32,13 @@ class PaymentDetail {
     }
   }
 
+  // MODIFIED: Changed currency symbol to 'Ksh.'
   String get formattedAmount =>
-      NumberFormat.currency(symbol: '₱', decimalDigits: 2).format(amount);
+      NumberFormat.currency(symbol: 'Ksh. ', decimalDigits: 2).format(amount);
   String get formattedDate => DateFormat.yMMMd().format(paymentDate);
 }
 
-// AdminPaymentReport class remains unchanged.
 class AdminPaymentReport {
-  // ... (no changes needed here)
   final double totalRevenue;
   final int totalTransactions;
   final DateTime startDate;
@@ -78,8 +77,10 @@ class AdminPaymentReport {
     );
   }
 
+  // MODIFIED: Changed currency symbol to 'Ksh.'
   String get formattedTotalRevenue =>
-      NumberFormat.currency(symbol: '₱', decimalDigits: 2).format(totalRevenue);
+      NumberFormat.currency(symbol: 'Ksh. ', decimalDigits: 2)
+          .format(totalRevenue);
   String get formattedDateRange =>
       '${DateFormat.yMMMd().format(startDate)} - ${DateFormat.yMMMd().format(endDate)}';
 }

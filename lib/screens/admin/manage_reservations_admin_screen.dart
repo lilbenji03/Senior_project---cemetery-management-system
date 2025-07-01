@@ -106,7 +106,6 @@ class _ManageReservationsAdminScreenState
     }
   }
 
-  /// --- THIS IS THE CORRECTED METHOD ---
   /// Fetches reservation data from the database.
   /// The [showLoadingIndicator] flag prevents the UI from flashing a loading
   /// spinner during background refreshes triggered by real-time events.
@@ -125,7 +124,6 @@ class _ManageReservationsAdminScreenState
       var query = Supabase.instance.client
           .from('detailed_reservations')
           .select('*')
-          // FIX: Removed the erroneous space between 'widget.c' and 'cemeteryId'
           .eq('cemetery_id', widget.cemeteryId!);
 
       if (_selectedFilterStatus != null) {
@@ -349,6 +347,19 @@ class _ManageReservationsAdminScreenState
                       "Expires:", _formatDateTime(reservation.expiresAt)),
                 _detailDialogRow("Est. Cost:",
                     "KES ${reservation.estimatedCost.toStringAsFixed(2)}"),
+
+                // --- MODIFICATION START: Added Burial Information ---
+                if (reservation.deceasedName != null &&
+                    reservation.deceasedName!.isNotEmpty)
+                  _detailDialogRow("Deceased Name:", reservation.deceasedName!),
+                if (reservation.selectedBurialDate != null)
+                  _detailDialogRow("Burial Date:",
+                      _formatDateTime(reservation.selectedBurialDate)),
+                if (reservation.burialPermitNumber != null &&
+                    reservation.burialPermitNumber!.isNotEmpty)
+                  _detailDialogRow(
+                      "Burial Permit #:", reservation.burialPermitNumber!),
+                // --- MODIFICATION END ---
               ],
             ),
           ),
